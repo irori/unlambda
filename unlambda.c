@@ -184,7 +184,7 @@ Cell* parse(FILE* fp) {
   case '|': return &constPipe;
   case '.': case '?':
     {
-      int ch2 = fgetc(fp);
+      intptr_t ch2 = fgetc(fp);
       if (ch2 == EOF)
 	errexit("unexpected EOF\n");
       return new_cell(ch == '.' ? DOT : QUES, (Cell*)ch2, NULL);
@@ -221,7 +221,7 @@ Cell* load_program(const char* fname) {
 #define POPCONT (task = next_cont->t, task_val = next_cont->r, next_cont = next_cont->l)
 
 void run(Cell* val) {
-  int current_ch = EOF;
+  intptr_t current_ch = EOF;
   Cell* next_cont = NULL;
   Cell* op;
 
