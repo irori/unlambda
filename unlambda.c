@@ -13,7 +13,6 @@ typedef enum {
   // Expressions
   AP, I, DOT, K1, K, S2, S1, S, V, D1, D, CONT, C, E, AT, QUES, PIPE,
   // Continuations
-  EVAL,
   APP1,
   APP,
   DEL,
@@ -130,7 +129,6 @@ Cell* gc_run(Cell* save) {
     case S1:
     case D1:
     case CONT:
-    case EVAL:
       scan->l = copy_cell(scan->l);
       break;
     case AP:
@@ -232,15 +230,13 @@ void run(Cell* val) {
   Cell* op;
 
   PUSHCONT(FINAL, NULL);
-  PUSHCONT(EVAL, NULL);
+  goto eval;
+
   for (;;) {
     if (free_ptr + GC_MARGIN >= heap_area)
       val = gc_run(val);
 
     switch (cont->t) {
-    case EVAL:
-      POPCONT;
-      goto eval;
     case APP1:
       if (val->t == D) {
 	val = new_cell(D1, cont->r, NULL);
@@ -308,9 +304,8 @@ void run(Cell* val) {
       break;
     case D1:
       PUSHCONT(DEL, val);
-      PUSHCONT(EVAL, NULL);
       val = op->l;
-      break;
+      goto eval;
     case D:
       val = new_cell(D1, val, NULL);
       break;
