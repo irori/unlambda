@@ -113,8 +113,10 @@ void gc_run(Cell** roots, int nroot) {
   free_area = heap_area - heap_size;
   heap_area = free_ptr + next_heap_size;
 
-  for (int i = 0; i < nroot; i++)
-    roots[i] = copy_cell(roots[i]);
+  for (int i = 0; i < nroot; i++) {
+    if (roots[i])
+      roots[i] = copy_cell(roots[i]);
+  }
 
   while (scan < free_ptr) {
     switch (scan->t) {
