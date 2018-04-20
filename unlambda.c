@@ -217,60 +217,64 @@ Cell* load_program(const char* fname) {
 }
 
 // Evaluator
-#define PUSHCONT(t, v) (cont = new_cell(t, cont, v))
-#define POPCONT (cont = cont->l)
+#define PUSHCONT(t, v) (next_cont = new_cell(task, next_cont, task_val), task = t, task_val = v)
+#define POPCONT (task = next_cont->t, task_val = next_cont->r, next_cont = next_cont->l)
 
 void run(Cell* val) {
   int current_ch = EOF;
-  Cell* cont;
+  Cell* next_cont = NULL;
   Cell* op;
 
-  PUSHCONT(FINAL, NULL);
+  CellType task = FINAL;
+  Cell* task_val = NULL;
+
   goto eval;
 
   for (;;) {
     if (free_ptr + GC_MARGIN >= heap_area) {
-      Cell* roots[2] = {val, cont};
-      gc_run(roots, 2);
+      Cell* roots[3] = {val, task_val, next_cont};
+      gc_run(roots, 3);
       val = roots[0];
-      cont = roots[1];
+      task_val = roots[1];
+      next_cont = roots[2];
     }
 
-    switch (cont->t) {
+    switch (task) {
     case APP1:
       if (val->t == D) {
-	val = new_cell(D1, cont->r, NULL);
+	val = new_cell(D1, task_val, NULL);
 	POPCONT;
 	break;
       } else {
-	Cell* rand = cont->r;
-	POPCONT;
-	PUSHCONT(APP, val);
+	Cell* rand = task_val;
+	task = APP;
+	task_val = val;
 	val = rand;
 	goto eval;
       }
     case APP:
-      op = cont->r;
+      op = task_val;
       POPCONT;
       goto apply;
     case DEL:
       op = val;
-      val = cont->r;
+      val = task_val;
       POPCONT;
       goto apply;
     case FINAL:
       return;
     default:
-      errexit("[BUG] run: invalid continuation type %d\n", cont->t);
+      errexit("[BUG] run: invalid task type %d\n", task);
     }
     continue;
   eval:
     while (val->t == AP) {
       if (free_ptr >= heap_area) {
-	Cell* roots[2] = {val, cont};
-	gc_run(roots, 2);
+	Cell* roots[3] = {val, task_val, next_cont};
+	gc_run(roots, 3);
 	val = roots[0];
-	cont = roots[1];
+	task_val = roots[1];
+	next_cont = roots[2];
       }
       PUSHCONT(APP1, val->r);
       val = val->l;
@@ -314,17 +318,15 @@ void run(Cell* val) {
       val = new_cell(D1, val, NULL);
       break;
     case CONT:
-      cont = op->l;
+      next_cont = op->l;
+      POPCONT;
       break;
     case C:
-      {
-	Cell* c = new_cell(CONT, cont, NULL);
-	PUSHCONT(APP, val);
-	val = c;
-	break;
-      }
+      PUSHCONT(APP, val);
+      val = new_cell(CONT, next_cont, NULL);
+      break;
     case E:
-      cont = new_cell(FINAL, NULL, NULL);
+      task = FINAL;
       break;
     case AT:
       current_ch = getchar();
