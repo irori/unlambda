@@ -42,7 +42,7 @@ static int heap_size, next_heap_size;
 static int gc_notify = 0;
 static double total_gc_time = 0.0;
 
-void errexit(char *fmt, ...) {
+static void errexit(char *fmt, ...) {
   va_list arg;
   va_start(arg, fmt);
   vfprintf(stderr, fmt, arg);
@@ -53,7 +53,7 @@ void errexit(char *fmt, ...) {
 
 // Storage -------------------------
 
-void storage_init(int size) {
+static void storage_init(int size) {
   heap_size = size;
   heap_area = malloc(sizeof(Cell) * heap_size);
   if (heap_area == NULL)
@@ -81,7 +81,7 @@ inline Cell* new_cell1(CellType t, Cell* l) {
   return c;
 }
 
-Cell* copy_cell(Cell* c)
+static Cell* copy_cell(Cell* c)
 {
   if (!c)
     return NULL;
@@ -104,7 +104,7 @@ Cell* copy_cell(Cell* c)
   return r;
 }
 
-void gc_run(Cell** roots, int nroot) {
+static void gc_run(Cell** roots, int nroot) {
   static Cell* free_area = NULL;
   int num_alive;
   Cell* scan;
@@ -169,7 +169,7 @@ void gc_run(Cell** roots, int nroot) {
 
 // Parser -------------------------
 
-Cell* parse(FILE* fp) {
+static Cell* parse(FILE* fp) {
   Cell* stack = NULL;
   Cell* e;
   do {
@@ -227,7 +227,7 @@ Cell* parse(FILE* fp) {
   return e;
 }
 
-Cell* load_program(const char* fname) {
+static Cell* load_program(const char* fname) {
   FILE* fp;
   Cell* c;
 
@@ -251,7 +251,7 @@ Cell* load_program(const char* fname) {
 #define PUSHCONT(t, v) (next_cont = new_cell(task, next_cont, task_val), task = t, task_val = v)
 #define POPCONT (task = next_cont->t, task_val = next_cont->r, next_cont = next_cont->l)
 
-void run(Cell* val) {
+static void run(Cell* val) {
   intptr_t current_ch = EOF;
   Cell* next_cont = NULL;
   Cell* op;
