@@ -352,7 +352,7 @@ int main(int argc, char *argv[]) {
   clock_t start;
   char *prog_file = NULL;
   int i;
-  int print_stats = 1;
+  int print_stats = 0;
     
   for (i = 1; i < argc; i++) {
     if (strcmp(argv[i], "-g") == 0)
