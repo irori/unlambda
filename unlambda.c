@@ -75,6 +75,9 @@ inline Cell* new_cell(CellType t, Cell* l, Cell* r) {
 
 Cell* copy_cell(Cell* c)
 {
+  if (!c)
+    return NULL;
+
   switch (c->t) {
   case COPIED:
     return c->l;
@@ -157,43 +160,61 @@ void gc_run(Cell** roots, int nroot) {
 // Parser -------------------------
 
 Cell* parse(FILE* fp) {
-  int ch;
+  Cell* stack = NULL;
+  Cell* e;
   do {
-    ch = fgetc(fp);
-    if (ch == '#') {
-      while (ch = fgetc(fp), ch != '\n' && ch != EOF)
-	;
+    if (free_ptr >= heap_area)
+      gc_run(&stack, 1);
+
+    int ch;
+    do {
+      ch = fgetc(fp);
+      if (ch == '#') {
+	while (ch = fgetc(fp), ch != '\n' && ch != EOF)
+	  ;
+      }
+    } while (isspace(ch));
+    switch (ch) {
+    case '`':
+      stack = new_cell(AP, NULL, stack);
+      continue;
+    case 'i': case 'I': e = &constI; break;
+    case 'k': case 'K': e = &constK; break;
+    case 's': case 'S': e = &constS; break;
+    case 'v': case 'V': e = &constV; break;
+    case 'd': case 'D': e = &constD; break;
+    case 'c': case 'C': e = &constC; break;
+    case 'e': case 'E': e = &constE; break;
+    case 'r': case 'R': e = new_cell(DOT, (Cell*)'\n', NULL); break;
+    case '@': e = &constAt; break;
+    case '|': e = &constPipe; break;
+    case '.': case '?':
+      {
+	intptr_t ch2 = fgetc(fp);
+	if (ch2 == EOF)
+	  errexit("unexpected EOF\n");
+	e = new_cell(ch == '.' ? DOT : QUES, (Cell*)ch2, NULL);
+	break;
+      }
+    case EOF:
+      errexit("unexpected EOF\n");
+      break;
+    default:
+      errexit("unexpected character %c\n", ch);
+      break;
     }
-  } while (isspace(ch));
-  switch (ch) {
-  case '`':
-    {
-      Cell* l = parse(fp);
-      Cell* r = parse(fp);
-      return new_cell(AP, l, r);
+    while (stack) {
+      if (!stack->l) {
+	stack->l = e;
+	break;
+      }
+      Cell* next = stack->r;
+      stack->r = e;
+      e = stack;
+      stack = next;
     }
-  case 'i': case 'I': return &constI;
-  case 'k': case 'K': return &constK;
-  case 's': case 'S': return &constS;
-  case 'v': case 'V': return &constV;
-  case 'd': case 'D': return &constD;
-  case 'c': case 'C': return &constC;
-  case 'e': case 'E': return &constE;
-  case 'r': case 'R': return new_cell(DOT, (Cell*)'\n', NULL);
-  case '@': return &constAt;
-  case '|': return &constPipe;
-  case '.': case '?':
-    {
-      intptr_t ch2 = fgetc(fp);
-      if (ch2 == EOF)
-	errexit("unexpected EOF\n");
-      return new_cell(ch == '.' ? DOT : QUES, (Cell*)ch2, NULL);
-    }
-  case EOF:
-    errexit("unexpected EOF\n");
-  }
-  errexit("unexpected character %c\n", ch);
-  return NULL;
+  } while (stack);
+  return e;
 }
 
 Cell* load_program(const char* fname) {
