@@ -43,25 +43,25 @@ static int gc_notify = 0;
 static double total_gc_time = 0.0;
 
 void errexit(char *fmt, ...) {
-    va_list arg;
-    va_start(arg, fmt);
-    vfprintf(stderr, fmt, arg);
-    va_end(arg);
+  va_list arg;
+  va_start(arg, fmt);
+  vfprintf(stderr, fmt, arg);
+  va_end(arg);
 
-    exit(1);
+  exit(1);
 }
 
 // Storage -------------------------
 
 void storage_init(int size) {
-    heap_size = size;
-    heap_area = malloc(sizeof(Cell) * heap_size);
-    if (heap_area == NULL)
-	errexit("Cannot allocate heap storage (%d cells)\n", heap_size);
+  heap_size = size;
+  heap_area = malloc(sizeof(Cell) * heap_size);
+  if (heap_area == NULL)
+    errexit("Cannot allocate heap storage (%d cells)\n", heap_size);
     
-    free_ptr = heap_area;
-    heap_area += heap_size;
-    next_heap_size = heap_size * 3 / 2;  
+  free_ptr = heap_area;
+  heap_area += heap_size;
+  next_heap_size = heap_size * 3 / 2;
 }
 
 inline Cell* new_cell(CellType t, Cell* l, Cell* r) {
@@ -70,6 +70,14 @@ inline Cell* new_cell(CellType t, Cell* l, Cell* r) {
   c->t = t;
   c->l = l;
   c->r = r;
+  return c;
+}
+
+inline Cell* new_cell1(CellType t, Cell* l) {
+  assert(free_ptr < heap_area);
+  Cell* c = free_ptr++;
+  c->t = t;
+  c->l = l;
   return c;
 }
 
@@ -187,7 +195,7 @@ Cell* parse(FILE* fp) {
     case 'd': case 'D': e = &constD; break;
     case 'c': case 'C': e = &constC; break;
     case 'e': case 'E': e = &constE; break;
-    case 'r': case 'R': e = new_cell(DOT, (Cell*)'\n', NULL); break;
+    case 'r': case 'R': e = new_cell1(DOT, (Cell*)'\n'); break;
     case '@': e = &constAt; break;
     case '|': e = &constPipe; break;
     case '.': case '?':
@@ -195,7 +203,7 @@ Cell* parse(FILE* fp) {
 	intptr_t ch2 = fgetc(fp);
 	if (ch2 == EOF)
 	  errexit("unexpected EOF\n");
-	e = new_cell(ch == '.' ? DOT : QUES, (Cell*)ch2, NULL);
+	e = new_cell1(ch == '.' ? DOT : QUES, (Cell*)ch2);
 	break;
       }
     case EOF:
@@ -220,23 +228,23 @@ Cell* parse(FILE* fp) {
 }
 
 Cell* load_program(const char* fname) {
-    FILE* fp;
-    Cell* c;
+  FILE* fp;
+  Cell* c;
 
-    if (fname == NULL)
-	fp = stdin;
-    else {
-	fp = fopen(fname, "r");
-	if (fp == NULL)
-	    errexit("cannot open %s\n", fname);
-    }
+  if (fname == NULL)
+    fp = stdin;
+  else {
+    fp = fopen(fname, "r");
+    if (fp == NULL)
+      errexit("cannot open %s\n", fname);
+  }
 
-    c = parse(fp);
+  c = parse(fp);
 
-    if (fname != NULL)
-	fclose(fp);
+  if (fname != NULL)
+    fclose(fp);
 
-    return c;
+  return c;
 }
 
 // Evaluator
@@ -265,7 +273,7 @@ void run(Cell* val) {
     switch (task) {
     case APP1:
       if (val->t == D) {
-	val = new_cell(D1, task_val, NULL);
+	val = new_cell1(D1, task_val);
 	POPCONT;
 	break;
       } else {
@@ -314,7 +322,7 @@ void run(Cell* val) {
       val = op->l;
       break;
     case K:
-      val = new_cell(K1, val, NULL);
+      val = new_cell1(K1, val);
       break;
     case S2:
       {
@@ -328,7 +336,7 @@ void run(Cell* val) {
       val = new_cell(S2, op->l, val);
       break;
     case S:
-      val = new_cell(S1, val, NULL);
+      val = new_cell1(S1, val);
       break;
     case V:
       val = op;
@@ -338,7 +346,7 @@ void run(Cell* val) {
       val = op->l;
       goto eval;
     case D:
-      val = new_cell(D1, val, NULL);
+      val = new_cell1(D1, val);
       break;
     case CONT:
       next_cont = op->l;
@@ -346,7 +354,7 @@ void run(Cell* val) {
       break;
     case C:
       PUSHCONT(APP, val);
-      val = new_cell(CONT, next_cont, NULL);
+      val = new_cell1(CONT, next_cont);
       break;
     case E:
       task = FINAL;
@@ -362,7 +370,7 @@ void run(Cell* val) {
       break;
     case PIPE:
       PUSHCONT(APP, val);
-      val = current_ch == EOF ? &constV : new_cell(DOT, (Cell*)current_ch, NULL);
+      val = current_ch == EOF ? &constV : new_cell1(DOT, (Cell*)current_ch);
       break;
     default:
       errexit("[BUG] apply: invalid operator type %d\n", op->t);
