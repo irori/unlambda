@@ -42,11 +42,6 @@ int heap_size, next_heap_size;;
 int gc_notify = 0;
 double total_gc_time = 0.0;
 
-int current_ch = EOF;
-Cell* cont;
-#define PUSHCONT(t, v) (cont = new_cell(t, cont, v))
-#define POPCONT (cont = cont->l)
-
 void errexit(char *fmt, ...) {
     va_list arg;
     va_start(arg, fmt);
@@ -98,7 +93,7 @@ Cell* copy_cell(Cell* c)
   return r;
 }
 
-Cell* gc_run(Cell* save) {
+void gc_run(Cell** roots, int nroot) {
   static Cell* free_area = NULL;
   int num_alive;
   Cell* scan;
@@ -115,10 +110,8 @@ Cell* gc_run(Cell* save) {
   free_area = heap_area - heap_size;
   heap_area = free_ptr + next_heap_size;
 
-  if (save)
-    save = copy_cell(save);
-  if (cont)
-    cont = copy_cell(cont);
+  for (int i = 0; i < nroot; i++)
+    roots[i] = copy_cell(roots[i]);
 
   while (scan < free_ptr) {
     switch (scan->t) {
@@ -159,7 +152,6 @@ Cell* gc_run(Cell* save) {
   }
 
   total_gc_time += (clock() - start) / (double)CLOCKS_PER_SEC;
-  return save;
 }
 
 // Parser -------------------------
@@ -225,16 +217,24 @@ Cell* load_program(const char* fname) {
 }
 
 // Evaluator
+#define PUSHCONT(t, v) (cont = new_cell(t, cont, v))
+#define POPCONT (cont = cont->l)
 
 void run(Cell* val) {
+  int current_ch = EOF;
+  Cell* cont;
   Cell* op;
 
   PUSHCONT(FINAL, NULL);
   goto eval;
 
   for (;;) {
-    if (free_ptr + GC_MARGIN >= heap_area)
-      val = gc_run(val);
+    if (free_ptr + GC_MARGIN >= heap_area) {
+      Cell* roots[2] = {val, cont};
+      gc_run(roots, 2);
+      val = roots[0];
+      cont = roots[1];
+    }
 
     switch (cont->t) {
     case APP1:
@@ -266,8 +266,12 @@ void run(Cell* val) {
     continue;
   eval:
     while (val->t == AP) {
-      if (free_ptr >= heap_area)
-	val = gc_run(val);
+      if (free_ptr >= heap_area) {
+	Cell* roots[2] = {val, cont};
+	gc_run(roots, 2);
+	val = roots[0];
+	cont = roots[1];
+      }
       PUSHCONT(APP1, val->r);
       val = val->l;
     }
