@@ -26,21 +26,21 @@ typedef struct _Cell {
   struct _Cell *l, *r;
 } Cell;
 
-Cell constI = {I};
-Cell constK = {K};
-Cell constS = {S};
-Cell constV = {V};
-Cell constD = {D};
-Cell constC = {C};
-Cell constE = {E};
-Cell constAt = {AT};
-Cell constPipe = {PIPE};
+static Cell constI = {I};
+static Cell constK = {K};
+static Cell constS = {S};
+static Cell constV = {V};
+static Cell constD = {D};
+static Cell constC = {C};
+static Cell constE = {E};
+static Cell constAt = {AT};
+static Cell constPipe = {PIPE};
 
-Cell *heap_area, *free_ptr;
-int heap_size, next_heap_size;;
+static Cell *heap_area, *free_ptr;
+static int heap_size, next_heap_size;
 
-int gc_notify = 0;
-double total_gc_time = 0.0;
+static int gc_notify = 0;
+static double total_gc_time = 0.0;
 
 void errexit(char *fmt, ...) {
     va_list arg;
