@@ -70,9 +70,8 @@ void storage_init(int size) {
     next_heap_size = heap_size * 3 / 2;  
 }
 
-Cell* new_cell(CellType t, Cell* l, Cell* r) {
-  if (free_ptr >= heap_area)
-    errexit("Out of memory\n");
+inline Cell* new_cell(CellType t, Cell* l, Cell* r) {
+  assert(free_ptr < heap_area);
   Cell* c = free_ptr++;
   c->t = t;
   c->l = l;
@@ -101,7 +100,7 @@ Cell* copy_cell(Cell* c)
 }
 
 Cell* gc_run(Cell* save) {
-  Cell* free_area = NULL;
+  static Cell* free_area = NULL;
   int num_alive;
   Cell* scan;
   clock_t start = clock();
@@ -152,9 +151,9 @@ Cell* gc_run(Cell* save) {
   if (gc_notify)
     fprintf(stderr, "GC: %d / %d\n", num_alive, heap_size);
 
-  if (heap_size != next_heap_size || num_alive * 8 > next_heap_size) {
+  if (heap_size != next_heap_size || num_alive * 6 > next_heap_size) {
     heap_size = next_heap_size;
-    if (num_alive * 8 > next_heap_size)
+    if (num_alive * 6 > next_heap_size)
       next_heap_size = num_alive * 8;
 
     free(free_area);
@@ -229,75 +228,9 @@ Cell* load_program(const char* fname) {
 
 // Evaluator
 
-Cell* eval(Cell* e) {
-  while (e->t == AP) {
-    if (free_ptr >= heap_area)
-      e = gc_run(e);
-    PUSHCONT(APP1, e->r);
-    e = e->l;
-  }
-  return e;
-}
-
-Cell* apply(Cell* rator, Cell* rand) {
-  switch (rator->t) {
-  case I:
-    return rand;
-  case DOT:
-    putchar((int)rator->l);
-    return rand;
-  case K1:
-    return rator->l;
-  case K:
-    return new_cell(K1, rand, NULL);
-  case S2:
-    {
-      Cell* e2 = new_cell(AP, rator->r, rand);
-      PUSHCONT(APP1, e2);
-      PUSHCONT(APP1, rand);
-      return rator->l;
-    }
-  case S1:
-    return new_cell(S2, rator->l, rand);
-  case S:
-    return new_cell(S1, rand, NULL);
-  case V:
-    return rator;
-  case D1:
-    PUSHCONT(DEL, rand);
-    PUSHCONT(EVAL, NULL);
-    return rator->l;
-  case D:
-    return new_cell(D1, rand, NULL);
-  case CONT:
-    cont = rator->l;
-    return rand;
-  case C:
-    {
-      Cell* val = new_cell(CONT, cont, NULL);
-      PUSHCONT(APP, rand);
-      return val;
-    }
-  case E:
-    cont = new_cell(FINAL, NULL, NULL);
-    return rand;
-  case AT:
-    current_ch = getchar();
-    PUSHCONT(APP, rand);
-    return current_ch == EOF ? &constV : &constI;
-  case QUES:
-    PUSHCONT(APP, rand);
-    return current_ch == (int)rator->l ? &constI : &constV;
-  case PIPE:
-    PUSHCONT(APP, rand);
-    return current_ch == EOF ? &constV : new_cell(DOT, (Cell*)current_ch, NULL);
-  default:
-    errexit("[BUG] apply: invalid operator type %d\n", rator->t);
-  }
-  return NULL;
-}
-
 void run(Cell* val) {
+  Cell* op;
+
   PUSHCONT(FINAL, NULL);
   PUSHCONT(EVAL, NULL);
   for (;;) {
@@ -307,37 +240,108 @@ void run(Cell* val) {
     switch (cont->t) {
     case EVAL:
       POPCONT;
-      val = eval(val);
-      break;
+      goto eval;
     case APP1:
       if (val->t == D) {
 	val = new_cell(D1, cont->r, NULL);
 	POPCONT;
+	break;
       } else {
 	Cell* rand = cont->r;
 	POPCONT;
 	PUSHCONT(APP, val);
-	val = eval(rand);
+	val = rand;
+	goto eval;
       }
-      break;
     case APP:
-      {
-	Cell* rator = cont->r;
-	POPCONT;
-	val = apply(rator, val);
-	break;
-      }
+      op = cont->r;
+      POPCONT;
+      goto apply;
     case DEL:
-      {
-	Cell* rand = cont->r;
-	POPCONT;
-	val = apply(val, rand);
-	break;
-      }
+      op = val;
+      val = cont->r;
+      POPCONT;
+      goto apply;
     case FINAL:
       return;
     default:
       errexit("[BUG] run: invalid continuation type %d\n", cont->t);
+    }
+    continue;
+  eval:
+    while (val->t == AP) {
+      if (free_ptr >= heap_area)
+	val = gc_run(val);
+      PUSHCONT(APP1, val->r);
+      val = val->l;
+    }
+    continue;
+  apply:
+    switch (op->t) {
+    case I:
+      break;
+    case DOT:
+      putchar((int)op->l);
+      break;
+    case K1:
+      val = op->l;
+      break;
+    case K:
+      val = new_cell(K1, val, NULL);
+      break;
+    case S2:
+      {
+	Cell* e2 = new_cell(AP, op->r, val);
+	PUSHCONT(APP1, e2);
+	PUSHCONT(APP1, val);
+	val = op->l;
+	break;
+      }
+    case S1:
+      val = new_cell(S2, op->l, val);
+      break;
+    case S:
+      val = new_cell(S1, val, NULL);
+      break;
+    case V:
+      val = op;
+      break;
+    case D1:
+      PUSHCONT(DEL, val);
+      PUSHCONT(EVAL, NULL);
+      val = op->l;
+      break;
+    case D:
+      val = new_cell(D1, val, NULL);
+      break;
+    case CONT:
+      cont = op->l;
+      break;
+    case C:
+      {
+	Cell* c = new_cell(CONT, cont, NULL);
+	PUSHCONT(APP, val);
+	val = c;
+	break;
+      }
+    case E:
+      cont = new_cell(FINAL, NULL, NULL);
+      break;
+    case AT:
+      current_ch = getchar();
+      PUSHCONT(APP, val);
+      val = current_ch == EOF ? &constV : &constI;
+      break;
+    case QUES:
+      PUSHCONT(APP, val);
+      val = current_ch == (int)op->l ? &constI : &constV;
+      break;
+    case PIPE:
+      PUSHCONT(APP, val);
+      val = current_ch == EOF ? &constV : new_cell(DOT, (Cell*)current_ch, NULL);
+      break;
+    default:
+      errexit("[BUG] apply: invalid operator type %d\n", op->t);
     }
   }
 }
