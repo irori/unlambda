@@ -11,7 +11,7 @@
 
 typedef enum {
   // Expressions
-  AP, I, DOT, K1, K, S2, S1, S, V, D1, D, CONT, C, E, AT, QUES, PIPE,
+  I, DOT, K1, K, S2, S1, S, V, D1, D, CONT, C, E, AT, QUES, PIPE, AP,
   // Continuations
   APP1,
   APP,
@@ -116,7 +116,7 @@ void gc_run(Cell** roots, int nroot) {
   while (scan < free_ptr) {
     switch (scan->t) {
     case COPIED:
-      errexit("[BUG] cannot happend\n");
+      errexit("[BUG] cannot happen\n");
       break;
     case K1:
     case S1:
