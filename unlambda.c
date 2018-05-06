@@ -1,6 +1,7 @@
 #include <assert.h>
 #include <ctype.h>
 #include <stdarg.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -14,6 +15,7 @@ typedef enum {
   I, DOT, K1, K, S2, S1, S, V, D1, D, CONT, C, E, AT, QUES, PIPE, AP,
   // Continuations
   APP1,
+  APPS,
   APP,
   DEL,
   FINAL,
@@ -64,7 +66,7 @@ static void storage_init(int size) {
   next_heap_size = heap_size * 3 / 2;
 }
 
-inline Cell* new_cell(CellType t, Cell* l, Cell* r) {
+static inline Cell* new_cell(CellType t, Cell* l, Cell* r) {
   assert(free_ptr < heap_area);
   Cell* c = free_ptr++;
   c->t = t;
@@ -73,7 +75,7 @@ inline Cell* new_cell(CellType t, Cell* l, Cell* r) {
   return c;
 }
 
-inline Cell* new_cell1(CellType t, Cell* l) {
+static inline Cell* new_cell1(CellType t, Cell* l) {
   assert(free_ptr < heap_area);
   Cell* c = free_ptr++;
   c->t = t;
@@ -140,6 +142,7 @@ static void gc_run(Cell** roots, int nroot) {
     case AP:
     case S2:
     case APP1:
+    case APPS:
     case APP:
     case DEL:
       scan->l = copy_cell(scan->l);
@@ -283,6 +286,19 @@ static void run(Cell* val) {
 	val = rand;
 	goto eval;
       }
+    case APPS:
+      if (val->t == D) {
+	val = new_cell1(D1, task_val);
+	POPCONT;
+	break;
+      } else {
+	Cell* rand = task_val;
+	task = APP;
+	task_val = val;
+	op = rand->l;
+	val = rand->r;
+	goto apply;
+      }
     case APP:
       op = task_val;
       POPCONT;
@@ -327,10 +343,9 @@ static void run(Cell* val) {
     case S2:
       {
 	Cell* e2 = new_cell(AP, op->r, val);
-	PUSHCONT(APP1, e2);
-	PUSHCONT(APP1, val);
-	val = op->l;
-	break;
+	PUSHCONT(APPS, e2);
+	op = op->l;
+	goto apply;
       }
     case S1:
       val = new_cell(S2, op->l, val);
