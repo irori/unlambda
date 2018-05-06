@@ -12,7 +12,7 @@
 
 typedef enum {
   // Expressions
-  I, DOT, K1, K, S2, S1, S, V, D1, D, CONT, C, E, AT, QUES, PIPE, AP,
+  I, DOT, K1, K, S2, C2, S1, S, V, D1, D, CONT, C, E, AT, QUES, PIPE, AP,
   // Continuations
   APP1,
   APPS,
@@ -97,6 +97,7 @@ static Cell* copy_cell(Cell* c)
       break;
     case AP:
     case S2:
+    case C2:
     case APP1:
     case APPS:
     case APP:
@@ -340,8 +341,14 @@ static void run(Cell* val) {
 	op = op->l;
 	goto apply;
       }
+    case C2:
+      PUSHCONT(DEL, op->r);
+      op = op->l;
+      goto apply;
     case S1:
-      val = new_cell(S2, op->l, val);
+      val = (val->t == K1)
+	? new_cell(C2, op->l, val->l)
+	: new_cell(S2, op->l, val);
       break;
     case S:
       val = new_cell1(S1, val);
