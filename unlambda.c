@@ -28,16 +28,6 @@ typedef struct _Cell {
   struct _Cell *l, *r;
 } Cell;
 
-static Cell constI = {I};
-static Cell constK = {K};
-static Cell constS = {S};
-static Cell constV = {V};
-static Cell constD = {D};
-static Cell constC = {C};
-static Cell constE = {E};
-static Cell constAt = {AT};
-static Cell constPipe = {PIPE};
-
 static Cell *heap_area, *free_ptr;
 static int heap_size, next_heap_size;
 
@@ -88,14 +78,8 @@ static Cell* copy_cell(Cell* c)
   if (!c)
     return NULL;
 
-  switch (c->t) {
-  case COPIED:
+  if (c->t == COPIED)
     return c->l;
-  case I: case K: case S: case V: case D: case C: case E: case AT: case PIPE:
-    return c;
-  default:
-    break;
-  }
 
   Cell* r = free_ptr++;
   r->t = c->t;
@@ -173,11 +157,26 @@ static void gc_run(Cell** roots, int nroot) {
 // Parser -------------------------
 
 static Cell* parse(FILE* fp) {
+  enum { preI = 1, preK, preS, preV, preD, preC, preE, preAt, prePipe, ROOT_COUNT };
+  Cell* gc_roots[ROOT_COUNT];
+  gc_roots[preI] = new_cell(I, NULL, NULL);
+  gc_roots[preK] = new_cell(K, NULL, NULL);
+  gc_roots[preS] = new_cell(S, NULL, NULL);
+  gc_roots[preV] = new_cell(V, NULL, NULL);
+  gc_roots[preD] = new_cell(D, NULL, NULL);
+  gc_roots[preC] = new_cell(C, NULL, NULL);
+  gc_roots[preE] = new_cell(E, NULL, NULL);
+  gc_roots[preAt] = new_cell(AT, NULL, NULL);
+  gc_roots[prePipe] = new_cell(PIPE, NULL, NULL);
+
   Cell* stack = NULL;
   Cell* e;
   do {
-    if (free_ptr >= heap_area)
-      gc_run(&stack, 1);
+    if (free_ptr >= heap_area) {
+      gc_roots[0] = stack;
+      gc_run(gc_roots, ROOT_COUNT);
+      stack = gc_roots[0];
+    }
 
     int ch;
     do {
@@ -191,16 +190,16 @@ static Cell* parse(FILE* fp) {
     case '`':
       stack = new_cell(AP, NULL, stack);
       continue;
-    case 'i': case 'I': e = &constI; break;
-    case 'k': case 'K': e = &constK; break;
-    case 's': case 'S': e = &constS; break;
-    case 'v': case 'V': e = &constV; break;
-    case 'd': case 'D': e = &constD; break;
-    case 'c': case 'C': e = &constC; break;
-    case 'e': case 'E': e = &constE; break;
+    case 'i': case 'I': e = gc_roots[preI]; break;
+    case 'k': case 'K': e = gc_roots[preK]; break;
+    case 's': case 'S': e = gc_roots[preS]; break;
+    case 'v': case 'V': e = gc_roots[preV]; break;
+    case 'd': case 'D': e = gc_roots[preD]; break;
+    case 'c': case 'C': e = gc_roots[preC]; break;
+    case 'e': case 'E': e = gc_roots[preE]; break;
     case 'r': case 'R': e = new_cell1(DOT, (Cell*)'\n'); break;
-    case '@': e = &constAt; break;
-    case '|': e = &constPipe; break;
+    case '@': e = gc_roots[preAt]; break;
+    case '|': e = gc_roots[prePipe]; break;
     case '.': case '?':
       {
 	intptr_t ch2 = fgetc(fp);
@@ -377,15 +376,15 @@ static void run(Cell* val) {
     case AT:
       current_ch = getchar();
       PUSHCONT(APP, val);
-      val = current_ch == EOF ? &constV : &constI;
+      val = new_cell(current_ch == EOF ? V : I, NULL, NULL);
       break;
     case QUES:
       PUSHCONT(APP, val);
-      val = current_ch == (int)op->l ? &constI : &constV;
+      val = new_cell(current_ch == (int)op->l ? I : V, NULL, NULL);
       break;
     case PIPE:
       PUSHCONT(APP, val);
-      val = current_ch == EOF ? &constV : new_cell1(DOT, (Cell*)current_ch);
+      val = new_cell1(current_ch == EOF ? V : DOT, (Cell*)current_ch);
       break;
     default:
       errexit("[BUG] apply: invalid operator type %d\n", op->t);
