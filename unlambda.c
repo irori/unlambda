@@ -87,13 +87,33 @@ static Cell* copy_cell(Cell* c)
   r->r = c->r;
   c->t = COPIED;
   c->l = r;
+
+  switch (r->t) {
+    case K1:
+    case S1:
+    case D1:
+    case CONT:
+      r->l = copy_cell(r->l);
+      break;
+    case AP:
+    case S2:
+    case APP1:
+    case APPS:
+    case APP:
+    case DEL:
+      r->l = copy_cell(r->l);
+      r->r = copy_cell(r->r);
+      break;
+    default:
+      break;
+  }
+
   return r;
 }
 
 static void gc_run(Cell** roots, int nroot) {
   static Cell* free_area = NULL;
   int num_alive;
-  Cell* scan;
   clock_t start = clock();
 
   if (free_area == NULL) {
@@ -103,39 +123,13 @@ static void gc_run(Cell** roots, int nroot) {
 	      next_heap_size);
   }
 
-  free_ptr = scan = free_area;
+  free_ptr = free_area;
   free_area = heap_area - heap_size;
   heap_area = free_ptr + next_heap_size;
 
   for (int i = 0; i < nroot; i++) {
     if (roots[i])
       roots[i] = copy_cell(roots[i]);
-  }
-
-  while (scan < free_ptr) {
-    switch (scan->t) {
-    case COPIED:
-      errexit("[BUG] cannot happen\n");
-      break;
-    case K1:
-    case S1:
-    case D1:
-    case CONT:
-      scan->l = copy_cell(scan->l);
-      break;
-    case AP:
-    case S2:
-    case APP1:
-    case APPS:
-    case APP:
-    case DEL:
-      scan->l = copy_cell(scan->l);
-      scan->r = copy_cell(scan->r);
-      break;
-    default:
-      break;
-    }
-    scan++;
   }
 
   num_alive = free_ptr - (heap_area - next_heap_size);
