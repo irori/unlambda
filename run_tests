@@ -1,0 +1,15 @@
+#!/bin/sh
+
+set -e
+
+for test in test/*.unl
+do
+    if [ -e ${test%.unl}.in ]
+    then
+	$1 $test <${test%.unl}.in |diff -u ${test%.unl}.out -
+    else
+	$1 $test |diff -u ${test%.unl}.out -
+    fi
+done
+
+echo 'All tests passed'
