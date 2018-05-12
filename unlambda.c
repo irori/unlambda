@@ -7,8 +7,6 @@
 #include <string.h>
 #include <time.h>
 
-#define INITIAL_HEAP_SIZE 512*1024
-
 typedef enum {
   // Expressions
   I, DOT, K1, K, S2, B2, C2, S1, B1, S, V, D1, D, CONT, C, E, AT, QUES, PIPE, AP,
@@ -24,11 +22,10 @@ typedef enum {
 
 typedef struct _Cell {
   CellType t;
+  uint8_t age;
+  uint8_t mark;
   struct _Cell *l, *r;
 } Cell;
-
-static Cell *heap_area, *free_ptr;
-static int heap_size, next_heap_size;
 
 static int gc_notify = 0;
 static double total_gc_time = 0.0;
@@ -44,35 +41,134 @@ static void errexit(char *fmt, ...) {
 
 // Storage -------------------------
 
-static void storage_init(int size) {
-  heap_size = size;
-  heap_area = malloc(sizeof(Cell) * heap_size);
-  if (heap_area == NULL)
-    errexit("Cannot allocate heap storage (%d cells)\n", heap_size);
-    
-  free_ptr = heap_area;
-  heap_area += heap_size;
-  next_heap_size = heap_size * 3 / 2;
+#define NEW_SIZE (256*1024)
+#define SURVIVOR_SIZE (64*1024)
+#define OLD_PAGE_SIZE (256*1024-1)
+#define AGE_MAX 2
+
+struct {
+  Cell new_area[NEW_SIZE];
+  Cell survivor1[SURVIVOR_SIZE];
+  Cell survivor2[SURVIVOR_SIZE];
+} young;
+
+typedef struct _OldPage {
+  Cell cells[OLD_PAGE_SIZE];
+  struct _OldPage *next;
+} OldPage;
+
+OldPage* old_area;
+Cell* free_list;
+
+static Cell *free_ptr, *from_area, *to_area;
+Cell** gc_roots;
+int gc_nroot;
+
+static void storage_init() {
+  free_ptr = young.new_area;
+  from_area = young.survivor1;
+  to_area = young.survivor2;
+
+  old_area = malloc(sizeof(OldPage));
+  if (old_area == NULL)
+    errexit("Cannot allocate initial heap\n");
+  old_area->next = NULL;
+  for (int i = 0; i < OLD_PAGE_SIZE - 1; i++)
+    old_area->cells[i].l = &old_area->cells[i + 1];
+  old_area->cells[OLD_PAGE_SIZE - 1].l = NULL;
+  free_list = old_area->cells;
 }
 
 static inline Cell* new_cell(CellType t, Cell* l, Cell* r) {
-  assert(free_ptr < heap_area);
+  assert(free_ptr < young.survivor1);
   Cell* c = free_ptr++;
   c->t = t;
+  c->age = 0;
   c->l = l;
   c->r = r;
   return c;
 }
 
 static inline Cell* new_cell1(CellType t, Cell* l) {
-  assert(free_ptr < heap_area);
+  assert(free_ptr < young.survivor1);
   Cell* c = free_ptr++;
   c->t = t;
+  c->age = 0;
   c->l = l;
   return c;
 }
 
-static Cell* copy_cell(Cell* c)
+static void mark(Cell* c) {
+  if (!c || c->mark)
+    return;
+
+  if (c->t == COPIED)
+    c = c->l;
+  c->mark = 1;
+
+  switch (c->t) {
+  case K1:
+  case S1:
+  case B1:
+  case D1:
+  case CONT:
+    mark(c->l);
+    break;
+  case AP:
+  case S2:
+  case B2:
+  case C2:
+  case APP1:
+  case APPS:
+  case APP:
+  case DEL:
+    mark(c->l);
+    mark(c->r);
+    break;
+  default:
+    break;
+  }
+}
+
+static void major_gc() {
+  for (int i = 0; i < gc_nroot; i++) {
+    if (gc_roots[i])
+      mark(gc_roots[i]);
+  }
+  int freed = 0, total = 0;
+  for (OldPage* old = old_area; old; old = old->next) {
+    for (int i = 0; i < OLD_PAGE_SIZE; i++) {
+      if (old->cells[i].mark)
+	old->cells[i].mark = 0;
+      else {
+	old->cells[i].l = free_list;
+	free_list = &old->cells[i];
+	freed++;
+      }
+    }
+    total += OLD_PAGE_SIZE;
+  }
+  if (gc_notify)
+    fprintf(stderr, "%d / %d cells freed\n", freed, total);
+
+  for (int i = 0; i < NEW_SIZE + 2 * SURVIVOR_SIZE; i++)
+    young.new_area[i].mark = 0;
+
+  if (freed < OLD_PAGE_SIZE) {
+    OldPage* page = malloc(sizeof(OldPage));
+    if (page == NULL)
+      errexit("Cannot allocate heap page\n");
+    page->next = old_area;
+    old_area = page;
+
+    for (int i = 0; i < OLD_PAGE_SIZE - 1; i++)
+      page->cells[i].l = &page->cells[i + 1];
+    page->cells[OLD_PAGE_SIZE - 1].l = free_list;
+    free_list = page->cells;
+  }
+}
+
+static Cell* copy_cell(Cell* c, int promoted)
 {
   if (!c)
     return NULL;
@@ -80,72 +176,72 @@ static Cell* copy_cell(Cell* c)
   if (c->t == COPIED)
     return c->l;
 
-  Cell* r = free_ptr++;
-  r->t = c->t;
-  r->l = c->l;
-  r->r = c->r;
+  if (c->age > AGE_MAX)
+    return c;  // Already promoted
+
+  Cell* r;
+  if (c->age == AGE_MAX) {
+    if (!free_list)
+      major_gc();
+    // Promotion
+    r = free_list;
+    free_list = free_list->l;
+    promoted = 1;
+  } else {
+    assert(!promoted);
+    r = free_ptr++;
+  }
+  *r = *c;
+  r->age++;
   c->t = COPIED;
   c->l = r;
 
   switch (r->t) {
-    case K1:
-    case S1:
-    case B1:
-    case D1:
-    case CONT:
-      r->l = copy_cell(r->l);
-      break;
-    case AP:
-    case S2:
-    case B2:
-    case C2:
-    case APP1:
-    case APPS:
-    case APP:
-    case DEL:
-      r->l = copy_cell(r->l);
-      r->r = copy_cell(r->r);
-      break;
-    default:
-      break;
+  case K1:
+  case S1:
+  case B1:
+  case D1:
+  case CONT:
+    r->l = copy_cell(r->l, promoted);
+    break;
+  case AP:
+  case S2:
+  case B2:
+  case C2:
+  case APP1:
+  case APPS:
+  case APP:
+  case DEL:
+    r->l = copy_cell(r->l, promoted);
+    r->r = copy_cell(r->r, promoted);
+    break;
+  default:
+    break;
   }
 
   return r;
 }
 
 static void gc_run(Cell** roots, int nroot) {
-  static Cell* free_area = NULL;
   int num_alive;
   clock_t start = clock();
 
-  if (free_area == NULL) {
-    free_area = malloc(sizeof(Cell) * next_heap_size);
-    if (free_area == NULL)
-      errexit("Cannot allocate heap storage (%d cells)\n",
-	      next_heap_size);
-  }
+  gc_roots = roots;
+  gc_nroot = nroot;
 
-  free_ptr = free_area;
-  free_area = heap_area - heap_size;
-  heap_area = free_ptr + next_heap_size;
+  free_ptr = to_area;
+  to_area = from_area;
+  from_area = free_ptr;
 
   for (int i = 0; i < nroot; i++) {
     if (roots[i])
-      roots[i] = copy_cell(roots[i]);
+      roots[i] = copy_cell(roots[i], 0);
   }
 
-  num_alive = free_ptr - (heap_area - next_heap_size);
+  num_alive = free_ptr - from_area;
   if (gc_notify)
-    fprintf(stderr, "GC: %d / %d\n", num_alive, heap_size);
-
-  if (heap_size != next_heap_size || num_alive * 6 > next_heap_size) {
-    heap_size = next_heap_size;
-    if (num_alive * 6 > next_heap_size)
-      next_heap_size = num_alive * 8;
-
-    free(free_area);
-    free_area = NULL;
-  }
+    fprintf(stderr, "Minor GC: %d\n", num_alive);
+  free_ptr = young.new_area;
 
   total_gc_time += (clock() - start) / (double)CLOCKS_PER_SEC;
 }
@@ -168,7 +264,7 @@ static Cell* parse(FILE* fp) {
   Cell* stack = NULL;
   Cell* e;
   do {
-    if (free_ptr >= heap_area) {
+    if (free_ptr >= young.survivor1) {
       gc_roots[0] = stack;
       gc_run(gc_roots, ROOT_COUNT);
       stack = gc_roots[0];
@@ -263,7 +359,7 @@ static void run(Cell* val) {
     switch (task) {
     case APP1:
       if (val->t == D) {
-	if (free_ptr >= heap_area) {
+	if (free_ptr >= young.survivor1) {
 	  Cell* roots[3] = {val, task_val, next_cont};
 	  gc_run(roots, 3);
 	  val = roots[0];
@@ -282,7 +378,7 @@ static void run(Cell* val) {
       }
     case APPS:
       if (val->t == D) {
-	if (free_ptr >= heap_area) {
+	if (free_ptr >= young.survivor1) {
 	  Cell* roots[3] = {val, task_val, next_cont};
 	  gc_run(roots, 3);
 	  val = roots[0];
@@ -317,7 +413,7 @@ static void run(Cell* val) {
     continue;
   eval:
     while (val->t == AP) {
-      if (free_ptr >= heap_area) {
+      if (free_ptr >= young.survivor1) {
 	Cell* roots[3] = {val, task_val, next_cont};
 	gc_run(roots, 3);
 	val = roots[0];
@@ -329,7 +425,7 @@ static void run(Cell* val) {
     }
     continue;
   apply:
-    if (free_ptr + 1 >= heap_area) {
+    if (free_ptr + 1 >= young.survivor1) {
       Cell* roots[4] = {val, task_val, next_cont, op};
       gc_run(roots, 4);
       val = roots[0];
@@ -441,7 +537,7 @@ int main(int argc, char *argv[]) {
       prog_file = argv[i];
   }
 
-  storage_init(INITIAL_HEAP_SIZE);
+  storage_init();
 
   root = load_program(prog_file);
 
