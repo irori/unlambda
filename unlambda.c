@@ -64,19 +64,25 @@ static Cell *free_ptr, *from_area, *to_area;
 Cell** gc_roots;
 int gc_nroot;
 
+static void grow_heap() {
+  OldPage* page = malloc(sizeof(OldPage));
+  if (page == NULL)
+    errexit("Cannot allocate heap page\n");
+  page->next = old_area;
+  old_area = page;
+
+  for (int i = 0; i < OLD_PAGE_SIZE - 1; i++)
+    page->cells[i].l = &page->cells[i + 1];
+  page->cells[OLD_PAGE_SIZE - 1].l = free_list;
+  free_list = page->cells;
+}
+
 static void storage_init() {
   free_ptr = young.new_area;
   from_area = young.survivor1;
   to_area = young.survivor2;
 
-  old_area = malloc(sizeof(OldPage));
-  if (old_area == NULL)
-    errexit("Cannot allocate initial heap\n");
-  old_area->next = NULL;
-  for (int i = 0; i < OLD_PAGE_SIZE - 1; i++)
-    old_area->cells[i].l = &old_area->cells[i + 1];
-  old_area->cells[OLD_PAGE_SIZE - 1].l = NULL;
-  free_list = old_area->cells;
+  grow_heap();
 }
 
 static inline Cell* new_cell(CellType t, Cell* l, Cell* r) {
@@ -154,18 +160,8 @@ static void major_gc() {
   for (int i = 0; i < NEW_SIZE + 2 * SURVIVOR_SIZE; i++)
     young.new_area[i].mark = 0;
 
-  if (freed < OLD_PAGE_SIZE) {
-    OldPage* page = malloc(sizeof(OldPage));
-    if (page == NULL)
-      errexit("Cannot allocate heap page\n");
-    page->next = old_area;
-    old_area = page;
-
-    for (int i = 0; i < OLD_PAGE_SIZE - 1; i++)
-      page->cells[i].l = &page->cells[i + 1];
-    page->cells[OLD_PAGE_SIZE - 1].l = free_list;
-    free_list = page->cells;
-  }
+  if (freed < OLD_PAGE_SIZE)
+    grow_heap();
 }
 
 static Cell* copy_cell(Cell* c, int promoted)
@@ -248,28 +244,34 @@ static void gc_run(Cell** roots, int nroot) {
 
 // Parser -------------------------
 
+static Cell* allocate_from_old(CellType t, Cell* l, Cell* r) {
+  if (!free_list)
+    grow_heap();
+
+  Cell* c = free_list;
+  free_list = free_list->l;
+  c->t = t;
+  c->age = AGE_MAX + 1;
+  c->mark = 0;
+  c->l = l;
+  c->r = r;
+  return c;
+}
+
 static Cell* parse(FILE* fp) {
-  enum { preI = 1, preK, preS, preV, preD, preC, preE, preAt, prePipe, ROOT_COUNT };
-  Cell* gc_roots[ROOT_COUNT];
-  gc_roots[preI] = new_cell(I, NULL, NULL);
-  gc_roots[preK] = new_cell(K, NULL, NULL);
-  gc_roots[preS] = new_cell(S, NULL, NULL);
-  gc_roots[preV] = new_cell(V, NULL, NULL);
-  gc_roots[preD] = new_cell(D, NULL, NULL);
-  gc_roots[preC] = new_cell(C, NULL, NULL);
-  gc_roots[preE] = new_cell(E, NULL, NULL);
-  gc_roots[preAt] = new_cell(AT, NULL, NULL);
-  gc_roots[prePipe] = new_cell(PIPE, NULL, NULL);
+  Cell *preI = allocate_from_old(I, NULL, NULL);
+  Cell *preK = allocate_from_old(K, NULL, NULL);
+  Cell *preS = allocate_from_old(S, NULL, NULL);
+  Cell *preV = allocate_from_old(V, NULL, NULL);
+  Cell *preD = allocate_from_old(D, NULL, NULL);
+  Cell *preC = allocate_from_old(C, NULL, NULL);
+  Cell *preE = allocate_from_old(E, NULL, NULL);
+  Cell *preAt = allocate_from_old(AT, NULL, NULL);
+  Cell *prePipe = allocate_from_old(PIPE, NULL, NULL);
 
   Cell* stack = NULL;
   Cell* e;
   do {
-    if (free_ptr >= young.survivor1) {
-      gc_roots[0] = stack;
-      gc_run(gc_roots, ROOT_COUNT);
-      stack = gc_roots[0];
-    }
-
     int ch;
     do {
       ch = fgetc(fp);
@@ -280,24 +282,24 @@ static Cell* parse(FILE* fp) {
     } while (isspace(ch));
     switch (ch) {
     case '`':
-      stack = new_cell(AP, NULL, stack);
+      stack = allocate_from_old(AP, NULL, stack);
       continue;
-    case 'i': case 'I': e = gc_roots[preI]; break;
-    case 'k': case 'K': e = gc_roots[preK]; break;
-    case 's': case 'S': e = gc_roots[preS]; break;
-    case 'v': case 'V': e = gc_roots[preV]; break;
-    case 'd': case 'D': e = gc_roots[preD]; break;
-    case 'c': case 'C': e = gc_roots[preC]; break;
-    case 'e': case 'E': e = gc_roots[preE]; break;
-    case 'r': case 'R': e = new_cell1(DOT, (Cell*)'\n'); break;
-    case '@': e = gc_roots[preAt]; break;
-    case '|': e = gc_roots[prePipe]; break;
+    case 'i': case 'I': e = preI; break;
+    case 'k': case 'K': e = preK; break;
+    case 's': case 'S': e = preS; break;
+    case 'v': case 'V': e = preV; break;
+    case 'd': case 'D': e = preD; break;
+    case 'c': case 'C': e = preC; break;
+    case 'e': case 'E': e = preE; break;
+    case 'r': case 'R': e = allocate_from_old(DOT, (Cell*)'\n', NULL); break;
+    case '@': e = preAt; break;
+    case '|': e = prePipe; break;
     case '.': case '?':
       {
 	intptr_t ch2 = fgetc(fp);
 	if (ch2 == EOF)
 	  errexit("unexpected EOF\n");
-	e = new_cell1(ch == '.' ? DOT : QUES, (Cell*)ch2);
+	e = allocate_from_old(ch == '.' ? DOT : QUES, (Cell*)ch2, NULL);
 	break;
       }
     case EOF:
