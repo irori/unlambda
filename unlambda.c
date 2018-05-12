@@ -41,16 +41,12 @@ static void errexit(char *fmt, ...) {
 
 // Storage -------------------------
 
-#define NEW_SIZE (256*1024)
-#define SURVIVOR_SIZE (64*1024)
+#define YOUNG_SIZE (256*1024)
 #define OLD_PAGE_SIZE (256*1024-1)
 #define AGE_MAX 2
 
-struct {
-  Cell new_area[NEW_SIZE];
-  Cell survivor1[SURVIVOR_SIZE];
-  Cell survivor2[SURVIVOR_SIZE];
-} young;
+Cell young1[YOUNG_SIZE];
+Cell young2[YOUNG_SIZE];
 
 typedef struct _OldPage {
   Cell cells[OLD_PAGE_SIZE];
@@ -60,7 +56,7 @@ typedef struct _OldPage {
 OldPage* old_area;
 Cell* free_list;
 
-static Cell *free_ptr, *from_area, *to_area;
+Cell *free_ptr, *young_area_end, *next_young_area;
 Cell** gc_roots;
 int gc_nroot;
 
@@ -78,15 +74,15 @@ static void grow_heap() {
 }
 
 static void storage_init() {
-  free_ptr = young.new_area;
-  from_area = young.survivor1;
-  to_area = young.survivor2;
+  free_ptr = young1;
+  young_area_end = free_ptr + YOUNG_SIZE;
+  next_young_area = young2;
 
   grow_heap();
 }
 
 static inline Cell* new_cell(CellType t, Cell* l, Cell* r) {
-  assert(free_ptr < young.survivor1);
+  assert(free_ptr < young_area_end);
   Cell* c = free_ptr++;
   c->t = t;
   c->age = 0;
@@ -96,7 +92,7 @@ static inline Cell* new_cell(CellType t, Cell* l, Cell* r) {
 }
 
 static inline Cell* new_cell1(CellType t, Cell* l) {
-  assert(free_ptr < young.survivor1);
+  assert(free_ptr < young_area_end);
   Cell* c = free_ptr++;
   c->t = t;
   c->age = 0;
@@ -157,8 +153,10 @@ static void major_gc() {
   if (gc_notify)
     fprintf(stderr, "%d / %d cells freed\n", freed, total);
 
-  for (int i = 0; i < NEW_SIZE + 2 * SURVIVOR_SIZE; i++)
-    young.new_area[i].mark = 0;
+  for (int i = 0; i < YOUNG_SIZE; i++)
+    young1[i].mark = 0;
+  for (int i = 0; i < YOUNG_SIZE; i++)
+    young2[i].mark = 0;
 
   if (freed < OLD_PAGE_SIZE)
     grow_heap();
@@ -225,19 +223,18 @@ static void gc_run(Cell** roots, int nroot) {
   gc_roots = roots;
   gc_nroot = nroot;
 
-  free_ptr = to_area;
-  to_area = from_area;
-  from_area = free_ptr;
+  free_ptr = next_young_area;
+  next_young_area = young_area_end - YOUNG_SIZE;
+  young_area_end = free_ptr + YOUNG_SIZE;
 
   for (int i = 0; i < nroot; i++) {
     if (roots[i])
       roots[i] = copy_cell(roots[i], 0);
   }
 
-  num_alive = free_ptr - from_area;
+  num_alive = free_ptr - (young_area_end - YOUNG_SIZE);
   if (gc_notify)
     fprintf(stderr, "Minor GC: %d\n", num_alive);
-  free_ptr = young.new_area;
 
   total_gc_time += (clock() - start) / (double)CLOCKS_PER_SEC;
 }
@@ -361,7 +358,7 @@ static void run(Cell* val) {
     switch (task) {
     case APP1:
       if (val->t == D) {
-	if (free_ptr >= young.survivor1) {
+	if (free_ptr >= young_area_end) {
 	  Cell* roots[3] = {val, task_val, next_cont};
 	  gc_run(roots, 3);
 	  val = roots[0];
@@ -380,7 +377,7 @@ static void run(Cell* val) {
       }
     case APPS:
       if (val->t == D) {
-	if (free_ptr >= young.survivor1) {
+	if (free_ptr >= young_area_end) {
 	  Cell* roots[3] = {val, task_val, next_cont};
 	  gc_run(roots, 3);
 	  val = roots[0];
@@ -415,7 +412,7 @@ static void run(Cell* val) {
     continue;
   eval:
     while (val->t == AP) {
-      if (free_ptr >= young.survivor1) {
+      if (free_ptr >= young_area_end) {
 	Cell* roots[3] = {val, task_val, next_cont};
 	gc_run(roots, 3);
 	val = roots[0];
@@ -427,7 +424,7 @@ static void run(Cell* val) {
     }
     continue;
   apply:
-    if (free_ptr + 1 >= young.survivor1) {
+    if (free_ptr + 1 >= young_area_end) {
       Cell* roots[4] = {val, task_val, next_cont, op};
       gc_run(roots, 4);
       val = roots[0];
