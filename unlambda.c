@@ -8,7 +8,6 @@
 #include <time.h>
 
 #define INITIAL_HEAP_SIZE 512*1024
-#define GC_MARGIN 10
 
 typedef enum {
   // Expressions
@@ -261,17 +260,16 @@ static void run(Cell* val) {
   goto eval;
 
   for (;;) {
-    if (free_ptr + GC_MARGIN >= heap_area) {
-      Cell* roots[3] = {val, task_val, next_cont};
-      gc_run(roots, 3);
-      val = roots[0];
-      task_val = roots[1];
-      next_cont = roots[2];
-    }
-
     switch (task) {
     case APP1:
       if (val->t == D) {
+	if (free_ptr >= heap_area) {
+	  Cell* roots[3] = {val, task_val, next_cont};
+	  gc_run(roots, 3);
+	  val = roots[0];
+	  task_val = roots[1];
+	  next_cont = roots[2];
+	}
 	val = new_cell1(D1, task_val);
 	POPCONT;
 	break;
@@ -284,6 +282,13 @@ static void run(Cell* val) {
       }
     case APPS:
       if (val->t == D) {
+	if (free_ptr >= heap_area) {
+	  Cell* roots[3] = {val, task_val, next_cont};
+	  gc_run(roots, 3);
+	  val = roots[0];
+	  task_val = roots[1];
+	  next_cont = roots[2];
+	}
 	val = new_cell1(D1, task_val);
 	POPCONT;
 	break;
@@ -324,6 +329,14 @@ static void run(Cell* val) {
     }
     continue;
   apply:
+    if (free_ptr + 1 >= heap_area) {
+      Cell* roots[4] = {val, task_val, next_cont, op};
+      gc_run(roots, 4);
+      val = roots[0];
+      task_val = roots[1];
+      next_cont = roots[2];
+      op = roots[3];
+    }
     switch (op->t) {
     case I:
       break;
