@@ -356,16 +356,10 @@ static void run(Cell* val) {
     switch (task) {
     case APP1:
       if (val->t == D) {
-	if (free_ptr >= young_area_end) {
-	  Cell* roots[3] = {val, task_val, next_cont};
-	  gc_run(roots, 3);
-	  val = roots[0];
-	  task_val = roots[1];
-	  next_cont = roots[2];
-	}
-	val = new_cell1(D1, task_val);
+	op = val;
+	val = task_val;
 	POPCONT;
-	break;
+	goto apply;
       } else {
 	Cell* rand = task_val;
 	task = APP;
@@ -375,24 +369,17 @@ static void run(Cell* val) {
       }
     case APPS:
       if (val->t == D) {
-	if (free_ptr >= young_area_end) {
-	  Cell* roots[3] = {val, task_val, next_cont};
-	  gc_run(roots, 3);
-	  val = roots[0];
-	  task_val = roots[1];
-	  next_cont = roots[2];
-	}
-	val = new_cell1(D1, task_val);
+	op = val;
+	val = task_val;
 	POPCONT;
-	break;
       } else {
 	Cell* rand = task_val;
 	task = APP;
 	task_val = val;
 	op = rand->l;
 	val = rand->r;
-	goto apply;
       }
+      goto apply;
     case APP:
       op = task_val;
       POPCONT;
