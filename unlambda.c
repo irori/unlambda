@@ -42,18 +42,18 @@ static void errexit(char *fmt, ...) {
 // Storage -------------------------
 
 #define YOUNG_SIZE (256*1024)
-#define OLD_PAGE_SIZE (256*1024-1)
+#define HEAP_CHUNK_SIZE (256*1024-1)
 #define AGE_MAX 2
 
 Cell young1[YOUNG_SIZE];
 Cell young2[YOUNG_SIZE];
 
-typedef struct _OldPage {
-  Cell cells[OLD_PAGE_SIZE];
-  struct _OldPage *next;
-} OldPage;
+typedef struct _HeapChunk {
+  Cell cells[HEAP_CHUNK_SIZE];
+  struct _HeapChunk *next;
+} HeapChunk;
 
-OldPage* old_area;
+HeapChunk* old_area;
 Cell* free_list;
 
 Cell *free_ptr, *young_area_end, *next_young_area;
@@ -61,16 +61,16 @@ Cell** gc_roots;
 int gc_nroot;
 
 static void grow_heap() {
-  OldPage* page = malloc(sizeof(OldPage));
-  if (page == NULL)
-    errexit("Cannot allocate heap page\n");
-  page->next = old_area;
-  old_area = page;
+  HeapChunk* chunk = malloc(sizeof(HeapChunk));
+  if (chunk == NULL)
+    errexit("Cannot allocate heap chunk\n");
+  chunk->next = old_area;
+  old_area = chunk;
 
-  for (int i = 0; i < OLD_PAGE_SIZE - 1; i++)
-    page->cells[i].l = &page->cells[i + 1];
-  page->cells[OLD_PAGE_SIZE - 1].l = free_list;
-  free_list = page->cells;
+  for (int i = 0; i < HEAP_CHUNK_SIZE - 1; i++)
+    chunk->cells[i].l = &chunk->cells[i + 1];
+  chunk->cells[HEAP_CHUNK_SIZE - 1].l = free_list;
+  free_list = chunk->cells;
 }
 
 static void storage_init() {
@@ -138,17 +138,17 @@ static void major_gc() {
       mark(gc_roots[i]);
   }
   int freed = 0, total = 0;
-  for (OldPage* old = old_area; old; old = old->next) {
-    for (int i = 0; i < OLD_PAGE_SIZE; i++) {
-      if (old->cells[i].mark)
-	old->cells[i].mark = 0;
+  for (HeapChunk* chunk = old_area; chunk; chunk = chunk->next) {
+    for (int i = 0; i < HEAP_CHUNK_SIZE; i++) {
+      if (chunk->cells[i].mark)
+	chunk->cells[i].mark = 0;
       else {
-	old->cells[i].l = free_list;
-	free_list = &old->cells[i];
+	chunk->cells[i].l = free_list;
+	free_list = &chunk->cells[i];
 	freed++;
       }
     }
-    total += OLD_PAGE_SIZE;
+    total += HEAP_CHUNK_SIZE;
   }
   if (gc_notify)
     fprintf(stderr, "%d / %d cells freed\n", freed, total);
@@ -158,11 +158,11 @@ static void major_gc() {
   for (int i = 0; i < YOUNG_SIZE; i++)
     young2[i].mark = 0;
 
-  if (freed < OLD_PAGE_SIZE)
+  if (freed < HEAP_CHUNK_SIZE)
     grow_heap();
 }
 
-static Cell* copy_cell(Cell* c, int promoted)
+static Cell* copy_cell(Cell* c)
 {
   if (!c)
     return NULL;
@@ -180,9 +180,7 @@ static Cell* copy_cell(Cell* c, int promoted)
     // Promotion
     r = free_list;
     free_list = free_list->l;
-    promoted = 1;
   } else {
-    assert(!promoted);
     r = free_ptr++;
   }
   *r = *c;
@@ -196,7 +194,7 @@ static Cell* copy_cell(Cell* c, int promoted)
   case B1:
   case D1:
   case CONT:
-    r->l = copy_cell(r->l, promoted);
+    r->l = copy_cell(r->l);
     break;
   case AP:
   case S2:
@@ -206,8 +204,8 @@ static Cell* copy_cell(Cell* c, int promoted)
   case APPS:
   case APP:
   case DEL:
-    r->l = copy_cell(r->l, promoted);
-    r->r = copy_cell(r->r, promoted);
+    r->l = copy_cell(r->l);
+    r->r = copy_cell(r->r);
     break;
   default:
     break;
@@ -229,7 +227,7 @@ static void gc_run(Cell** roots, int nroot) {
 
   for (int i = 0; i < nroot; i++) {
     if (roots[i])
-      roots[i] = copy_cell(roots[i], 0);
+      roots[i] = copy_cell(roots[i]);
   }
 
   num_alive = free_ptr - (young_area_end - YOUNG_SIZE);
