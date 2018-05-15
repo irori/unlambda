@@ -158,8 +158,11 @@ static void major_gc() {
   for (int i = 0; i < YOUNG_SIZE; i++)
     young2[i].mark = 0;
 
-  if (freed < HEAP_CHUNK_SIZE)
+  while (freed < total / 5) {
     grow_heap();
+    freed += HEAP_CHUNK_SIZE;
+    total += HEAP_CHUNK_SIZE;
+  }
 }
 
 static Cell* copy_cell(Cell* c)
@@ -531,8 +534,8 @@ int main(int argc, char *argv[]) {
   if (print_stats) {
     double evaltime = (clock() - start) / (double)CLOCKS_PER_SEC;
 
-    printf("  total eval time --- %5.2f sec.\n", evaltime - total_gc_time);
-    printf("  total gc time   --- %5.2f sec.\n", total_gc_time);
+    fprintf(stderr, "  total eval time --- %5.2f sec.\n", evaltime - total_gc_time);
+    fprintf(stderr, "  total gc time   --- %5.2f sec.\n", total_gc_time);
   }
   return 0;
 }
