@@ -99,6 +99,7 @@ static inline Cell* new_cell1(CellType t, Cell* l) {
 }
 
 static void mark(Cell* c) {
+ top:
   if (!c || c->mark)
     return;
 
@@ -112,8 +113,8 @@ static void mark(Cell* c) {
   case B1:
   case D1:
   case CONT:
-    mark(c->l);
-    break;
+    c = c->l;
+    goto top;
   case AP:
   case S2:
   case B2:
@@ -123,8 +124,8 @@ static void mark(Cell* c) {
   case APP:
   case DEL:
     mark(c->l);
-    mark(c->r);
-    break;
+    c = c->r;
+    goto top;
   default:
     break;
   }
