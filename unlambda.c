@@ -57,8 +57,6 @@ HeapChunk* old_area;
 Cell* free_list;
 
 Cell *free_ptr, *young_area_end, *next_young_area;
-Cell** gc_roots;
-int gc_nroot;
 
 static void grow_heap() {
   HeapChunk* chunk = malloc(sizeof(HeapChunk));
@@ -132,10 +130,10 @@ static void mark(Cell* c) {
   }
 }
 
-static void major_gc() {
-  for (int i = 0; i < gc_nroot; i++) {
-    if (gc_roots[i])
-      mark(gc_roots[i]);
+static void major_gc(Cell** roots, int nroot) {
+  for (int i = 0; i < nroot; i++) {
+    if (roots[i])
+      mark(roots[i]);
   }
   int freed = 0, total = 0;
   for (HeapChunk* chunk = old_area; chunk; chunk = chunk->next) {
@@ -178,11 +176,12 @@ static Cell* copy_cell(Cell* c)
 
   Cell* r;
   if (c->age == AGE_MAX) {
-    if (!free_list)
-      major_gc();
     // Promotion
     r = free_list;
     free_list = free_list->l;
+    free_ptr->t = COPIED;
+    free_ptr->l = r;
+    free_ptr++;
   } else {
     r = free_ptr++;
   }
@@ -190,47 +189,59 @@ static Cell* copy_cell(Cell* c)
   r->age++;
   c->t = COPIED;
   c->l = r;
-
-  switch (r->t) {
-  case K1:
-  case S1:
-  case B1:
-  case D1:
-  case CONT:
-    r->l = copy_cell(r->l);
-    break;
-  case AP:
-  case S2:
-  case B2:
-  case C2:
-  case APP1:
-  case APPS:
-  case APP:
-  case DEL:
-    r->l = copy_cell(r->l);
-    r->r = copy_cell(r->r);
-    break;
-  default:
-    break;
-  }
-
   return r;
 }
 
 static void gc_run(Cell** roots, int nroot) {
   int num_alive;
+  Cell* scan;
   clock_t start = clock();
 
-  gc_roots = roots;
-  gc_nroot = nroot;
-
-  free_ptr = next_young_area;
+  free_ptr = scan = next_young_area;
   next_young_area = young_area_end - YOUNG_SIZE;
   young_area_end = free_ptr + YOUNG_SIZE;
 
   for (int i = 0; i < nroot; i++) {
+    if (!free_list)
+      major_gc(roots, nroot);
     if (roots[i])
       roots[i] = copy_cell(roots[i]);
+  }
+
+  while (scan < free_ptr) {
+    if (!free_list)
+      major_gc(roots, nroot);
+    Cell* c = scan;
+    if (c->t == COPIED)
+      c = c->l;
+    switch (c->t) {
+    case COPIED:
+      errexit("[BUG] cannot happen\n");
+      break;
+    case K1:
+    case S1:
+    case B1:
+    case D1:
+    case CONT:
+      c->l = copy_cell(c->l);
+      break;
+    case AP:
+    case S2:
+    case B2:
+    case C2:
+    case APP1:
+    case APPS:
+    case APP:
+    case DEL:
+      c->l = copy_cell(c->l);
+      if (!free_list)
+	major_gc(roots, nroot);
+      c->r = copy_cell(c->r);
+      break;
+    default:
+      break;
+    }
+    scan++;
   }
 
   num_alive = free_ptr - (young_area_end - YOUNG_SIZE);
