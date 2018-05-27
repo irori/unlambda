@@ -7,6 +7,14 @@
 #include <string.h>
 #include <time.h>
 
+// Verbosity levels
+enum {
+  V_NONE,
+  V_STATS,
+  V_MAJOR_GC,
+  V_MINOR_GC,
+} verbosity = V_NONE;
+
 typedef enum {
   // Expressions
   I, DOT, K1, K, S2, B2, C2, S1, B1, S, V, D1, D, CONT, C, E, AT, QUES, PIPE, AP,
@@ -28,7 +36,6 @@ typedef struct _Cell {
   struct _Cell *l, *r;
 } Cell;
 
-static int gc_notify = 0;
 static double total_gc_time = 0.0;
 
 static void errexit(char *fmt, ...) {
@@ -158,7 +165,7 @@ static void major_gc(Cell** roots, int nroot) {
     }
     total += HEAP_CHUNK_SIZE;
   }
-  if (gc_notify)
+  if (verbosity >= V_MAJOR_GC)
     fprintf(stderr, "%d / %d cells freed\n", freed, total);
 
   for (int i = 0; i < YOUNG_SIZE; i++)
@@ -255,7 +262,7 @@ static void gc_run(Cell** roots, int nroot) {
   }
 
   num_alive = free_ptr - (young_area_end - YOUNG_SIZE);
-  if (gc_notify)
+  if (verbosity >= V_MINOR_GC)
     fprintf(stderr, "Minor GC: %d\n", num_alive);
 
   total_gc_time += (clock() - start) / (double)CLOCKS_PER_SEC;
@@ -537,10 +544,8 @@ int main(int argc, char *argv[]) {
   int print_stats = 0;
     
   for (i = 1; i < argc; i++) {
-    if (strcmp(argv[i], "-g") == 0)
-      gc_notify = 1;
-    else if (strcmp(argv[i], "-s") == 0)
-      print_stats = 1;
+    if (argv[i][0] == '-' && argv[i][1] == 'v' && isdigit(argv[i][2]))
+      verbosity = argv[i][2] - '0';
     else if (strcmp(argv[i], "-u") == 0)
       setbuf(stdout, NULL);
     else
@@ -554,7 +559,7 @@ int main(int argc, char *argv[]) {
   start = clock();
   run(root);
 
-  if (print_stats) {
+  if (verbosity >= V_STATS) {
     double evaltime = (clock() - start) / (double)CLOCKS_PER_SEC;
 
     fprintf(stderr, "  total eval time --- %5.2f sec.\n", evaltime - total_gc_time);
