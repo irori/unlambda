@@ -22,6 +22,7 @@ typedef enum {
 
 typedef struct _Cell {
   CellType t;
+  uint8_t ch;  // for DOT and QUES
   uint8_t age;
   uint8_t mark;
   struct _Cell *l, *r;
@@ -95,6 +96,14 @@ static inline Cell* new_cell1(CellType t, Cell* l) {
   c->t = t;
   c->age = 0;
   c->l = l;
+  return c;
+}
+
+static inline Cell* new_cell0(CellType t) {
+  assert(free_ptr < young_area_end);
+  Cell* c = free_ptr++;
+  c->t = t;
+  c->age = 0;
   return c;
 }
 
@@ -301,7 +310,7 @@ static Cell* parse(FILE* fp) {
     case 'd': case 'D': e = preD; break;
     case 'c': case 'C': e = preC; break;
     case 'e': case 'E': e = preE; break;
-    case 'r': case 'R': e = allocate_from_old(DOT, (Cell*)'\n', NULL); break;
+    case 'r': case 'R': e = allocate_from_old(DOT, NULL, NULL); e->ch = '\n'; break;
     case '@': e = preAt; break;
     case '|': e = prePipe; break;
     case '.': case '?':
@@ -309,7 +318,8 @@ static Cell* parse(FILE* fp) {
 	intptr_t ch2 = fgetc(fp);
 	if (ch2 == EOF)
 	  errexit("unexpected EOF\n");
-	e = allocate_from_old(ch == '.' ? DOT : QUES, (Cell*)ch2, NULL);
+	e = allocate_from_old(ch == '.' ? DOT : QUES, NULL, NULL);
+	e->ch = ch2;
 	break;
       }
     case EOF:
@@ -436,7 +446,7 @@ static void run(Cell* val) {
     case I:
       break;
     case DOT:
-      putchar((int)op->l);
+      putchar(op->ch);
       break;
     case K1:
       val = op->l;
@@ -502,15 +512,16 @@ static void run(Cell* val) {
     case AT:
       current_ch = getchar();
       PUSHCONT(APP, val);
-      val = new_cell(current_ch == EOF ? V : I, NULL, NULL);
+      val = new_cell0(current_ch == EOF ? V : I);
       break;
     case QUES:
       PUSHCONT(APP, val);
-      val = new_cell(current_ch == (int)op->l ? I : V, NULL, NULL);
+      val = new_cell0(current_ch == op->ch ? I : V);
       break;
     case PIPE:
       PUSHCONT(APP, val);
-      val = new_cell1(current_ch == EOF ? V : DOT, (Cell*)current_ch);
+      val = new_cell0(current_ch == EOF ? V : DOT);
+      val->ch = current_ch;
       break;
     default:
       errexit("[BUG] apply: invalid operator type %d\n", op->t);
