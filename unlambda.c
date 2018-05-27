@@ -1,3 +1,8 @@
+// Unlambda interpreter
+//
+// Copyright (c) 2018 Kunihiko Sakamoto <irorin@gmail.com>
+// This code is licensed under the MIT License (see LICENSE file for details).
+
 #include <assert.h>
 #include <ctype.h>
 #include <stdarg.h>
@@ -14,6 +19,16 @@ enum {
   V_MAJOR_GC,
   V_MINOR_GC,
 } verbosity = V_NONE;
+
+static void errexit(char *fmt, ...) {
+  va_list arg;
+  va_start(arg, fmt);
+  vfprintf(stderr, fmt, arg);
+  va_end(arg);
+  exit(1);
+}
+
+// Storage management --------------------------------------------------
 
 typedef enum {
   // Expressions
@@ -35,17 +50,6 @@ typedef struct _Cell {
   uint8_t mark;
   struct _Cell *l, *r;
 } Cell;
-
-static void errexit(char *fmt, ...) {
-  va_list arg;
-  va_start(arg, fmt);
-  vfprintf(stderr, fmt, arg);
-  va_end(arg);
-
-  exit(1);
-}
-
-// Storage -------------------------
 
 #define YOUNG_SIZE (256*1024)
 #define HEAP_CHUNK_SIZE (256*1024-1)
@@ -272,7 +276,7 @@ static void gc_run(Cell** roots, int nroot) {
   total_gc_time += (clock() - start) / (double)CLOCKS_PER_SEC;
 }
 
-// Parser -------------------------
+// Parser --------------------------------------------------------------
 
 static Cell* allocate_from_old(CellType t, Cell* l, Cell* r) {
   if (!free_list)
@@ -374,7 +378,8 @@ static Cell* load_program(const char* fname) {
   return c;
 }
 
-// Evaluator
+// Evaluator -----------------------------------------------------------
+
 #define PUSHCONT(t, v) (next_cont = new_cell(task, next_cont, task_val), task = t, task_val = v)
 #define POPCONT (task = next_cont->t, task_val = next_cont->r, next_cont = next_cont->l)
 
@@ -539,6 +544,8 @@ static void run(Cell* val) {
     }
   }
 }
+
+// Main ----------------------------------------------------------------
 
 int main(int argc, char *argv[]) {
   Cell* root;
