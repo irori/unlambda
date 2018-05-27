@@ -32,7 +32,7 @@ static void errexit(char *fmt, ...) {
 
 typedef enum {
   // Expressions
-  I, DOT, K1, K, S2, B2, C2, S1, B1, S, V, D1, D, CONT, C, E, AT, QUES, PIPE, AP,
+  I, DOT, K1, K, S2, B2, C2, V2, S1, B1, T1, S, V, D1, D, CONT, C, E, AT, QUES, PIPE, AP,
   // Continuations
   APP1,
   APPS,
@@ -134,6 +134,7 @@ static void mark(Cell* c) {
   case S1:
   case B1:
   case D1:
+  case T1:
   case CONT:
     c = c->l;
     goto top;
@@ -141,6 +142,7 @@ static void mark(Cell* c) {
   case S2:
   case B2:
   case C2:
+  case V2:
   case APP1:
   case APPS:
   case APP:
@@ -246,6 +248,7 @@ static void gc_run(Cell** roots, int nroot) {
     case S1:
     case B1:
     case D1:
+    case T1:
     case CONT:
       c->l = copy_cell(c->l);
       break;
@@ -253,6 +256,7 @@ static void gc_run(Cell** roots, int nroot) {
     case S2:
     case B2:
     case C2:
+    case V2:
     case APP1:
     case APPS:
     case APP:
@@ -491,14 +495,31 @@ static void run(Cell* val) {
       PUSHCONT(DEL, op->r);
       op = op->l;
       goto apply;
+    case V2:
+      {
+	Cell* v = op->l;
+	PUSHCONT(DEL, op->r);
+	op = val;
+	val = v;
+	goto apply;
+      }
     case S1:
       val = (val->t == K1)
-	? new_cell(C2, op->l, val->l)
+	? (op->l->t == I ? new_cell1(T1, val->l)
+	   : op->l->t == T1 ? new_cell(V2, op->l->l, val->l)
+	   : new_cell(C2, op->l, val->l))
 	: new_cell(S2, op->l, val);
       break;
     case B1:
       val = new_cell(B2, op->l, val);
       break;
+    case T1:
+      {
+	Cell* v = op->l;
+	op = val;
+	val = v;
+	goto apply;
+      }
     case S:
       val = (val->t == K1)
 	? new_cell1(B1, val->l)
