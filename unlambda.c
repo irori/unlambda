@@ -36,8 +36,6 @@ typedef struct _Cell {
   struct _Cell *l, *r;
 } Cell;
 
-static double total_gc_time = 0.0;
-
 static void errexit(char *fmt, ...) {
   va_list arg;
   va_start(arg, fmt);
@@ -65,6 +63,10 @@ HeapChunk* old_area;
 Cell* free_list;
 
 Cell *free_ptr, *young_area_end, *next_young_area;
+
+static double total_gc_time = 0.0;
+static int major_gc_count = 0;
+static int minor_gc_count = 0;
 
 static void grow_heap() {
   HeapChunk* chunk = malloc(sizeof(HeapChunk));
@@ -178,6 +180,7 @@ static void major_gc(Cell** roots, int nroot) {
     freed += HEAP_CHUNK_SIZE;
     total += HEAP_CHUNK_SIZE;
   }
+  major_gc_count++;
 }
 
 static Cell* copy_cell(Cell* c)
@@ -265,6 +268,7 @@ static void gc_run(Cell** roots, int nroot) {
   if (verbosity >= V_MINOR_GC)
     fprintf(stderr, "Minor GC: %d\n", num_alive);
 
+  minor_gc_count++;
   total_gc_time += (clock() - start) / (double)CLOCKS_PER_SEC;
 }
 
@@ -564,6 +568,8 @@ int main(int argc, char *argv[]) {
 
     fprintf(stderr, "  total eval time --- %5.2f sec.\n", evaltime - total_gc_time);
     fprintf(stderr, "  total gc time   --- %5.2f sec.\n", total_gc_time);
+    fprintf(stderr, "  major gc count  --- %5d\n", major_gc_count);
+    fprintf(stderr, "  minor gc count  --- %5d\n", minor_gc_count);
   }
   return 0;
 }
