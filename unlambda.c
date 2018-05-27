@@ -34,11 +34,7 @@ typedef enum {
   // Expressions
   I, DOT, K1, K, S2, B2, C2, V2, S1, B1, T1, S, V, D1, D, CONT, C, E, AT, QUES, PIPE, AP,
   // Continuations
-  APP1,
-  APPS,
-  APP,
-  DEL,
-  FINAL,
+  EVAL_RIGHT, EVAL_RIGHT_S, APPLY, APPLY_T, EXIT,
   // GC
   COPIED,
 } CellType;
@@ -142,10 +138,10 @@ static void mark(Cell* c) {
   case B2:
   case C2:
   case V2:
-  case APP1:
-  case APPS:
-  case APP:
-  case DEL:
+  case EVAL_RIGHT:
+  case EVAL_RIGHT_S:
+  case APPLY:
+  case APPLY_T:
     mark(c->l);
     c = c->r;
     goto top;
@@ -256,10 +252,10 @@ static void gc_run(Cell** roots, int nroot) {
     case B2:
     case C2:
     case V2:
-    case APP1:
-    case APPS:
-    case APP:
-    case DEL:
+    case EVAL_RIGHT:
+    case EVAL_RIGHT_S:
+    case APPLY:
+    case APPLY_T:
       c->l = copy_cell(c->l);
       if (!free_list)
 	major_gc(roots, nroot);
@@ -391,14 +387,15 @@ void run(Cell* val) {
   Cell* next_cont = NULL;
   Cell* op;
 
-  CellType task = FINAL;
+  CellType task = EXIT;
   Cell* task_val = NULL;
 
   goto eval;
 
   for (;;) {
     switch (task) {
-    case APP1:
+    case EVAL_RIGHT:
+      // Evaluate `<val><task_val>.
       if (val->t == D) {
 	op = val;
 	val = task_val;
@@ -406,34 +403,38 @@ void run(Cell* val) {
 	goto apply;
       } else {
 	Cell* rand = task_val;
-	task = APP;
+	task = APPLY;
 	task_val = val;
 	val = rand;
 	goto eval;
       }
-    case APPS:
+    case EVAL_RIGHT_S:
+      // Evaluate `<val><task_val>, task_val is of the form `<v1><v2>
+      // where v1 and v2 are already evaluated.
       if (val->t == D) {
 	op = val;
 	val = task_val;
 	POPCONT;
       } else {
 	Cell* rand = task_val;
-	task = APP;
+	task = APPLY;
 	task_val = val;
 	op = rand->l;
 	val = rand->r;
       }
       goto apply;
-    case APP:
+    case APPLY:
+      // Apply `<task_val><val>.
       op = task_val;
       POPCONT;
       goto apply;
-    case DEL:
+    case APPLY_T:
+      // Apply `<val><task_val>.
       op = val;
       val = task_val;
       POPCONT;
       goto apply;
-    case FINAL:
+    case EXIT:
       return;
     default:
       errexit("[BUG] run: invalid task type %d\n", task);
@@ -448,7 +449,7 @@ void run(Cell* val) {
 	task_val = roots[1];
 	next_cont = roots[2];
       }
-      PUSHCONT(APP1, val->r);
+      PUSHCONT(EVAL_RIGHT, val->r);
       val = val->l;
     }
     continue;
@@ -476,7 +477,7 @@ void run(Cell* val) {
     case S2:
       {
 	Cell* e2 = new_cell(AP, op->r, val);
-	PUSHCONT(APPS, e2);
+	PUSHCONT(EVAL_RIGHT_S, e2);
 	op = op->l;
 	goto apply;
       }
@@ -486,18 +487,18 @@ void run(Cell* val) {
 	val = new_cell1(D1, e2);
 	break;
       } else {
-	PUSHCONT(APP, op->l);
+	PUSHCONT(APPLY, op->l);
 	op = op->r;
 	goto apply;
       }
     case C2:
-      PUSHCONT(DEL, op->r);
+      PUSHCONT(APPLY_T, op->r);
       op = op->l;
       goto apply;
     case V2:
       {
 	Cell* v = op->l;
-	PUSHCONT(DEL, op->r);
+	PUSHCONT(APPLY_T, op->r);
 	op = val;
 	val = v;
 	goto apply;
@@ -528,7 +529,7 @@ void run(Cell* val) {
       val = op;
       break;
     case D1:
-      PUSHCONT(DEL, val);
+      PUSHCONT(APPLY_T, val);
       val = op->l;
       goto eval;
     case D:
@@ -539,23 +540,23 @@ void run(Cell* val) {
       POPCONT;
       break;
     case C:
-      PUSHCONT(APP, val);
+      PUSHCONT(APPLY, val);
       val = new_cell1(CONT, next_cont);
       break;
     case E:
-      task = FINAL;
+      task = EXIT;
       break;
     case AT:
       current_ch = getchar();
-      PUSHCONT(APP, val);
+      PUSHCONT(APPLY, val);
       val = new_cell0(current_ch == EOF ? V : I);
       break;
     case QUES:
-      PUSHCONT(APP, val);
+      PUSHCONT(APPLY, val);
       val = new_cell0(current_ch == op->ch ? I : V);
       break;
     case PIPE:
-      PUSHCONT(APP, val);
+      PUSHCONT(APPLY, val);
       val = new_cell0(current_ch == EOF ? V : DOT);
       val->ch = current_ch;
       break;
