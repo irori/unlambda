@@ -72,10 +72,10 @@ static double total_gc_time = 0.0;
 static int major_gc_count = 0;
 static int minor_gc_count = 0;
 
-static void grow_heap() {
+static void grow() {
   HeapChunk* chunk = malloc(sizeof(HeapChunk));
   if (chunk == NULL)
-    errexit("Cannot allocate heap chunk\n");
+    errexit("Out of memory\n");
   chunk->next = old_area;
   old_area = chunk;
 
@@ -89,8 +89,7 @@ static void storage_init() {
   free_ptr = young1;
   young_area_end = free_ptr + YOUNG_SIZE;
   next_young_area = young2;
-
-  grow_heap();
+  grow();
 }
 
 static inline Cell* new_cell(CellType t, Cell* l, Cell* r) {
@@ -182,7 +181,7 @@ static void major_gc(Cell** roots, int nroot) {
     young2[i].mark = 0;
 
   while (freed < total / 5) {
-    grow_heap();
+    grow();
     freed += HEAP_CHUNK_SIZE;
     total += HEAP_CHUNK_SIZE;
   }
@@ -284,7 +283,7 @@ static void gc_run(Cell** roots, int nroot) {
 
 static Cell* allocate_from_old(CellType t, Cell* l, Cell* r) {
   if (!free_list)
-    grow_heap();
+    grow();
 
   Cell* c = free_list;
   free_list = free_list->l;
@@ -387,7 +386,7 @@ static Cell* load_program(const char* fname) {
 #define PUSHCONT(t, v) (next_cont = new_cell(task, next_cont, task_val), task = t, task_val = v)
 #define POPCONT (task = next_cont->t, task_val = next_cont->r, next_cont = next_cont->l)
 
-static void run(Cell* val) {
+void run(Cell* val) {
   intptr_t current_ch = EOF;
   Cell* next_cont = NULL;
   Cell* op;
