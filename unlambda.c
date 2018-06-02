@@ -51,6 +51,7 @@ typedef struct _Cell {
 #define YOUNG_SIZE (256*1024)
 #define HEAP_CHUNK_SIZE (256*1024-1)
 #define AGE_MAX 2
+#define INITIAL_MARK_STACK_SIZE (64*1024)
 
 Cell young1[YOUNG_SIZE];
 Cell young2[YOUNG_SIZE];
@@ -116,46 +117,62 @@ static inline Cell* new_cell0(CellType t) {
   return c;
 }
 
-static void mark(Cell* c) {
- top:
-  if (!c || c->marked)
-    return;
+static void mark(Cell* roots[], int nroot) {
+  int stack_size = INITIAL_MARK_STACK_SIZE;
+  Cell** stack = malloc(sizeof(Cell*) * stack_size);
+  if (!stack)
+    errexit("Out of memory\n");
+  int i;
+  for (i = 0; i < nroot; i++)
+    stack[i] = roots[i];
 
-  if (c->t == COPIED)
-    c = c->l;
-  c->marked = true;
+  while (i) {
+    Cell* c = stack[--i];
+  top:
+    if (!c || c->marked)
+      continue;
+    if (c->t == COPIED)
+      c = c->l;
+    c->marked = true;
 
-  switch (c->t) {
-  case K1:
-  case S1:
-  case B1:
-  case D1:
-  case T1:
-  case CONT:
-    c = c->l;
-    goto top;
-  case AP:
-  case S2:
-  case B2:
-  case C2:
-  case V2:
-  case EVAL_RIGHT:
-  case EVAL_RIGHT_S:
-  case APPLY:
-  case APPLY_T:
-    mark(c->l);
-    c = c->r;
-    goto top;
-  default:
-    break;
+    switch (c->t) {
+    case K1:
+    case S1:
+    case B1:
+    case D1:
+    case T1:
+    case CONT:
+      c = c->l;
+      goto top;
+    case AP:
+    case S2:
+    case B2:
+    case C2:
+    case V2:
+    case EVAL_RIGHT:
+    case EVAL_RIGHT_S:
+    case APPLY:
+    case APPLY_T:
+      if (i >= stack_size) {
+	stack_size *= 2;
+	stack = realloc(stack, sizeof(Cell*) * stack_size);
+	if (!stack)
+	  errexit("Out of memory\n");
+      }
+      stack[i++] = c->r;
+      c = c->l;
+      goto top;
+    default:
+      break;
+    }
   }
+  free(stack);
 }
 
-static void major_gc(Cell** roots, int nroot) {
-  for (int i = 0; i < nroot; i++) {
-    if (roots[i])
-      mark(roots[i]);
-  }
+static void major_gc(Cell* roots[], int nroot) {
+  mark(roots, nroot);
+
+  // Sweep
   int freed = 0, total = 0;
   for (HeapChunk* chunk = old_area; chunk; chunk = chunk->next) {
     for (int i = 0; i < HEAP_CHUNK_SIZE; i++) {
@@ -214,7 +231,7 @@ static Cell* copy_cell(Cell* c)
   return r;
 }
 
-static void gc_run(Cell** roots, int nroot) {
+static void gc_run(Cell* roots[], int nroot) {
   int num_alive;
   Cell* scan;
   clock_t start = clock();
