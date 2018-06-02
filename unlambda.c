@@ -6,6 +6,7 @@
 #include <assert.h>
 #include <ctype.h>
 #include <stdarg.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -43,7 +44,7 @@ typedef struct _Cell {
   CellType t;
   uint8_t ch;  // for DOT and QUES
   uint8_t age;
-  uint8_t mark;
+  bool marked;
   struct _Cell *l, *r;
 } Cell;
 
@@ -117,12 +118,12 @@ static inline Cell* new_cell0(CellType t) {
 
 static void mark(Cell* c) {
  top:
-  if (!c || c->mark)
+  if (!c || c->marked)
     return;
 
   if (c->t == COPIED)
     c = c->l;
-  c->mark = 1;
+  c->marked = true;
 
   switch (c->t) {
   case K1:
@@ -158,8 +159,8 @@ static void major_gc(Cell** roots, int nroot) {
   int freed = 0, total = 0;
   for (HeapChunk* chunk = old_area; chunk; chunk = chunk->next) {
     for (int i = 0; i < HEAP_CHUNK_SIZE; i++) {
-      if (chunk->cells[i].mark)
-	chunk->cells[i].mark = 0;
+      if (chunk->cells[i].marked)
+	chunk->cells[i].marked = false;
       else {
 	chunk->cells[i].l = free_list;
 	free_list = &chunk->cells[i];
@@ -172,9 +173,9 @@ static void major_gc(Cell** roots, int nroot) {
     fprintf(stderr, "%d / %d cells freed\n", freed, total);
 
   for (int i = 0; i < YOUNG_SIZE; i++)
-    young1[i].mark = 0;
+    young1[i].marked = false;
   for (int i = 0; i < YOUNG_SIZE; i++)
-    young2[i].mark = 0;
+    young2[i].marked = false;
 
   while (freed < total / 5) {
     grow();
@@ -285,7 +286,7 @@ static Cell* allocate_from_old(CellType t, Cell* l, Cell* r) {
   free_list = free_list->l;
   c->t = t;
   c->age = AGE_MAX + 1;
-  c->mark = 0;
+  c->marked = false;
   c->l = l;
   c->r = r;
   return c;
@@ -573,7 +574,6 @@ int main(int argc, char *argv[]) {
   clock_t start;
   char *prog_file = NULL;
   int i;
-  int print_stats = 0;
     
   for (i = 1; i < argc; i++) {
     if (argv[i][0] == '-' && argv[i][1] == 'v' && isdigit(argv[i][2]))
