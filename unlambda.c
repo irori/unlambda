@@ -154,10 +154,10 @@ static void mark(Cell* roots[], int nroot) {
     case APPLY:
     case APPLY_T:
       if (i >= stack_size) {
-	stack_size *= 2;
-	stack = realloc(stack, sizeof(Cell*) * stack_size);
-	if (!stack)
-	  errexit("Out of memory\n");
+        stack_size *= 2;
+        stack = realloc(stack, sizeof(Cell*) * stack_size);
+        if (!stack)
+          errexit("Out of memory\n");
       }
       stack[i++] = c->r;
       c = c->l;
@@ -177,11 +177,11 @@ static void major_gc(Cell* roots[], int nroot) {
   for (HeapChunk* chunk = old_area; chunk; chunk = chunk->next) {
     for (int i = 0; i < HEAP_CHUNK_SIZE; i++) {
       if (chunk->cells[i].marked)
-	chunk->cells[i].marked = false;
+        chunk->cells[i].marked = false;
       else {
-	chunk->cells[i].l = free_list;
-	free_list = &chunk->cells[i];
-	freed++;
+        chunk->cells[i].l = free_list;
+        free_list = &chunk->cells[i];
+        freed++;
       }
     }
     total += HEAP_CHUNK_SIZE;
@@ -276,7 +276,7 @@ static void gc_run(Cell* roots[], int nroot) {
     case APPLY_T:
       c->l = copy_cell(c->l);
       if (!free_list)
-	major_gc(roots, nroot);
+        major_gc(roots, nroot);
       c->r = copy_cell(c->r);
       break;
     default:
@@ -327,8 +327,8 @@ static Cell* parse(FILE* fp) {
     do {
       ch = fgetc(fp);
       if (ch == '#') {
-	while (ch = fgetc(fp), ch != '\n' && ch != EOF)
-	  ;
+        while (ch = fgetc(fp), ch != '\n' && ch != EOF)
+          ;
       }
     } while (isspace(ch));
     switch (ch) {
@@ -347,12 +347,12 @@ static Cell* parse(FILE* fp) {
     case '|': e = prePipe; break;
     case '.': case '?':
       {
-	intptr_t ch2 = fgetc(fp);
-	if (ch2 == EOF)
-	  errexit("unexpected EOF\n");
-	e = allocate_from_old(ch == '.' ? DOT : QUES, NULL, NULL);
-	e->ch = ch2;
-	break;
+        intptr_t ch2 = fgetc(fp);
+        if (ch2 == EOF)
+          errexit("unexpected EOF\n");
+        e = allocate_from_old(ch == '.' ? DOT : QUES, NULL, NULL);
+        e->ch = ch2;
+        break;
       }
     case EOF:
       errexit("unexpected EOF\n");
@@ -363,8 +363,8 @@ static Cell* parse(FILE* fp) {
     }
     while (stack) {
       if (!stack->l) {
-	stack->l = e;
-	break;
+        stack->l = e;
+        break;
       }
       Cell* next = stack->r;
       stack->r = e;
@@ -415,30 +415,30 @@ void run(Cell* val) {
     case EVAL_RIGHT:
       // Evaluate `<val><task_val>.
       if (val->t == D) {
-	op = val;
-	val = task_val;
-	POPCONT;
-	goto apply;
+        op = val;
+        val = task_val;
+        POPCONT;
+        goto apply;
       } else {
-	Cell* rand = task_val;
-	task = APPLY;
-	task_val = val;
-	val = rand;
-	goto eval;
+        Cell* rand = task_val;
+        task = APPLY;
+        task_val = val;
+        val = rand;
+        goto eval;
       }
     case EVAL_RIGHT_S:
       // Evaluate `<val><task_val>, task_val is of the form `<v1><v2>
       // where v1 and v2 are already evaluated.
       if (val->t == D) {
-	op = val;
-	val = task_val;
-	POPCONT;
+        op = val;
+        val = task_val;
+        POPCONT;
       } else {
-	Cell* rand = task_val;
-	task = APPLY;
-	task_val = val;
-	op = rand->l;
-	val = rand->r;
+        Cell* rand = task_val;
+        task = APPLY;
+        task_val = val;
+        op = rand->l;
+        val = rand->r;
       }
       goto apply;
     case APPLY:
@@ -461,11 +461,11 @@ void run(Cell* val) {
   eval:
     while (val->t == AP) {
       if (free_ptr >= young_area_end) {
-	Cell* roots[3] = {val, task_val, next_cont};
-	gc_run(roots, 3);
-	val = roots[0];
-	task_val = roots[1];
-	next_cont = roots[2];
+        Cell* roots[3] = {val, task_val, next_cont};
+        gc_run(roots, 3);
+        val = roots[0];
+        task_val = roots[1];
+        next_cont = roots[2];
       }
       PUSHCONT(EVAL_RIGHT, val->r);
       val = val->l;
@@ -494,20 +494,20 @@ void run(Cell* val) {
       break;
     case S2:
       {
-	Cell* e2 = new_cell(AP, op->r, val);
-	PUSHCONT(EVAL_RIGHT_S, e2);
-	op = op->l;
-	goto apply;
+        Cell* e2 = new_cell(AP, op->r, val);
+        PUSHCONT(EVAL_RIGHT_S, e2);
+        op = op->l;
+        goto apply;
       }
     case B2:
       if (op->l->t == D) {
-	Cell* e2 = new_cell(AP, op->r, val);
-	val = new_cell1(D1, e2);
-	break;
+        Cell* e2 = new_cell(AP, op->r, val);
+        val = new_cell1(D1, e2);
+        break;
       } else {
-	PUSHCONT(APPLY, op->l);
-	op = op->r;
-	goto apply;
+        PUSHCONT(APPLY, op->l);
+        op = op->r;
+        goto apply;
       }
     case C2:
       PUSHCONT(APPLY_T, op->r);
@@ -515,33 +515,33 @@ void run(Cell* val) {
       goto apply;
     case V2:
       {
-	Cell* v = op->l;
-	PUSHCONT(APPLY_T, op->r);
-	op = val;
-	val = v;
-	goto apply;
+        Cell* v = op->l;
+        PUSHCONT(APPLY_T, op->r);
+        op = val;
+        val = v;
+        goto apply;
       }
     case S1:
       val = (val->t == K1)
-	? (op->l->t == I ? new_cell1(T1, val->l)
-	   : op->l->t == T1 ? new_cell(V2, op->l->l, val->l)
-	   : new_cell(C2, op->l, val->l))
-	: new_cell(S2, op->l, val);
+        ? (op->l->t == I ? new_cell1(T1, val->l)
+           : op->l->t == T1 ? new_cell(V2, op->l->l, val->l)
+           : new_cell(C2, op->l, val->l))
+        : new_cell(S2, op->l, val);
       break;
     case B1:
       val = new_cell(B2, op->l, val);
       break;
     case T1:
       {
-	Cell* v = op->l;
-	op = val;
-	val = v;
-	goto apply;
+        Cell* v = op->l;
+        op = val;
+        val = v;
+        goto apply;
       }
     case S:
       val = (val->t == K1)
-	? new_cell1(B1, val->l)
-	: new_cell1(S1, val);
+        ? new_cell1(B1, val->l)
+        : new_cell1(S1, val);
       break;
     case V:
       val = op;
