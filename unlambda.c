@@ -389,9 +389,16 @@ static Cell* load_program(const char* fname) {
 
   c = parse(fp);
 
-  if (fname != NULL)
+  if (fname == NULL) {
+    // If both program and input are from stdin, discard the rest of the
+    // current line, for convenience
+    int ch;
+    do {
+      ch = getchar();
+    } while (ch != EOF && ch != '\n');
+  } else {
     fclose(fp);
-
+  }
   return c;
 }
 
