@@ -202,8 +202,7 @@ static void major_gc(Cell* roots[], int nroot) {
   major_gc_count++;
 }
 
-static Cell* copy_cell(Cell* c)
-{
+static Cell* copy_cell(Cell* c) {
   if (!c)
     return NULL;
 
@@ -232,11 +231,9 @@ static Cell* copy_cell(Cell* c)
 }
 
 static void gc_run(Cell* roots[], int nroot) {
-  int num_alive;
-  Cell* scan;
   clock_t start = clock();
 
-  free_ptr = scan = next_young_area;
+  Cell* scan = free_ptr = next_young_area;
   next_young_area = young_area_end - YOUNG_SIZE;
   young_area_end = free_ptr + YOUNG_SIZE;
 
@@ -285,7 +282,7 @@ static void gc_run(Cell* roots[], int nroot) {
     scan++;
   }
 
-  num_alive = free_ptr - (young_area_end - YOUNG_SIZE);
+  int num_alive = free_ptr - (young_area_end - YOUNG_SIZE);
   if (verbosity >= V_MINOR_GC)
     fprintf(stderr, "Minor GC: %d\n", num_alive);
 
@@ -377,8 +374,6 @@ static Cell* parse(FILE* fp) {
 
 static Cell* load_program(const char* fname) {
   FILE* fp;
-  Cell* c;
-
   if (fname == NULL)
     fp = stdin;
   else {
@@ -387,7 +382,7 @@ static Cell* load_program(const char* fname) {
       errexit("cannot open %s\n", fname);
   }
 
-  c = parse(fp);
+  Cell* c = parse(fp);
 
   if (fname == NULL) {
     // If both program and input are from stdin, discard the rest of the
@@ -594,30 +589,22 @@ void run(Cell* val) {
 // Main ----------------------------------------------------------------
 
 int main(int argc, char *argv[]) {
-  Cell* root;
-  clock_t start;
   char *prog_file = NULL;
-  int i;
-    
-  for (i = 1; i < argc; i++) {
+  for (int i = 1; i < argc; i++) {
     if (argv[i][0] == '-' && argv[i][1] == 'v' && isdigit(argv[i][2]))
       verbosity = argv[i][2] - '0';
-    else if (strcmp(argv[i], "-u") == 0)
-      setbuf(stdout, NULL);
     else
       prog_file = argv[i];
   }
 
   storage_init();
+  Cell* root = load_program(prog_file);
 
-  root = load_program(prog_file);
-
-  start = clock();
+  clock_t start = clock();
   run(root);
 
   if (verbosity >= V_STATS) {
     double evaltime = (clock() - start) / (double)CLOCKS_PER_SEC;
-
     fprintf(stderr, "  total eval time --- %5.2f sec.\n", evaltime - total_gc_time);
     fprintf(stderr, "  total gc time   --- %5.2f sec.\n", total_gc_time);
     fprintf(stderr, "  major gc count  --- %5d\n", major_gc_count);
