@@ -3,7 +3,6 @@
 // Copyright (c) 2018 Kunihiko Sakamoto <irorin@gmail.com>
 // This code is licensed under the MIT License (see LICENSE file for details).
 
-#include <assert.h>
 #include <ctype.h>
 #include <stdarg.h>
 #include <stdbool.h>
@@ -91,7 +90,6 @@ static void storage_init() {
 }
 
 static inline Cell* new_cell(CellType t, Cell* l, Cell* r) {
-  assert(free_ptr < young_area_end);
   Cell* c = free_ptr++;
   c->t = t;
   c->age = 0;
@@ -101,7 +99,6 @@ static inline Cell* new_cell(CellType t, Cell* l, Cell* r) {
 }
 
 static inline Cell* new_cell1(CellType t, Cell* l) {
-  assert(free_ptr < young_area_end);
   Cell* c = free_ptr++;
   c->t = t;
   c->age = 0;
@@ -110,7 +107,6 @@ static inline Cell* new_cell1(CellType t, Cell* l) {
 }
 
 static inline Cell* new_cell0(CellType t) {
-  assert(free_ptr < young_area_end);
   Cell* c = free_ptr++;
   c->t = t;
   c->age = 0;
@@ -282,9 +278,10 @@ static void gc_run(Cell* roots[], int nroot) {
     scan++;
   }
 
-  int num_alive = free_ptr - (young_area_end - YOUNG_SIZE);
-  if (verbosity >= V_MINOR_GC)
-    fprintf(stderr, "Minor GC: %d\n", num_alive);
+  if (verbosity >= V_MINOR_GC) {
+    long num_alive = free_ptr - (young_area_end - YOUNG_SIZE);
+    fprintf(stderr, "Minor GC: %ld\n", num_alive);
+  }
 
   minor_gc_count++;
   total_gc_time += (clock() - start) / (double)CLOCKS_PER_SEC;
@@ -344,7 +341,7 @@ static Cell* parse(FILE* fp) {
     case '|': e = prePipe; break;
     case '.': case '?':
       {
-        intptr_t ch2 = fgetc(fp);
+        int ch2 = fgetc(fp);
         if (ch2 == EOF)
           errexit("unexpected EOF\n");
         e = allocate_from_old(ch == '.' ? DOT : QUES, NULL, NULL);
@@ -403,7 +400,7 @@ static Cell* load_program(const char* fname) {
 #define POPCONT (task = next_cont->t, task_val = next_cont->r, next_cont = next_cont->l)
 
 void run(Cell* val) {
-  intptr_t current_ch = EOF;
+  int current_ch = EOF;
   Cell* next_cont = NULL;
   Cell* op;
 
