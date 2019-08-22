@@ -12,6 +12,8 @@
 #include <string.h>
 #include <time.h>
 
+#define VERSION "1.0.0"
+
 // Verbosity levels
 enum {
   V_NONE,
@@ -585,13 +587,30 @@ void run(Cell* val) {
 
 // Main ----------------------------------------------------------------
 
+void help(const char *progname) {
+  printf("Usage: %s [options] sourcefile\n", progname);
+  printf("  -h       print this help and exit\n");
+  printf("  -v       print version and exit\n");
+  printf("  -v[0-3]  set verbosity level (default: 0)\n");
+}
+
 int main(int argc, char *argv[]) {
   char *prog_file = NULL;
   for (int i = 1; i < argc; i++) {
-    if (argv[i][0] == '-' && argv[i][1] == 'v' && isdigit(argv[i][2]))
+    if (argv[i][0] == '-' && argv[i][1] == 'v' && isdigit(argv[i][2])) {
       verbosity = argv[i][2] - '0';
-    else
+    } else if (strcmp(argv[i], "-h") == 0) {
+      help(argv[0]);
+      return 0;
+    } else if (strcmp(argv[i], "-v") == 0) {
+      printf("Unlambda interpreter " VERSION " by irori\n");
+      return 0;
+    } else if (argv[i][0] == '-') {
+      fprintf(stderr, "bad option %s  (Try -h for more information).\n", argv[i]);
+      return 1;
+    } else {
       prog_file = argv[i];
+    }
   }
 
   storage_init();
