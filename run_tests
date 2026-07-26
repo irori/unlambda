@@ -12,4 +12,13 @@ do
     fi
 done
 
+# Materializing a continuation larger than the young generation must keep
+# collecting until promoted frames leave room for the next cell.
+awk 'BEGIN {
+    n = 300000
+    for (i = 0; i < n + 1; i++) printf "`"
+    printf "ce"
+    for (i = 0; i < n; i++) printf "i"
+}' | "$1" >/dev/null
+
 echo 'All tests passed'

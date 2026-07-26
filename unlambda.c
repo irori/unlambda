@@ -49,6 +49,20 @@ typedef struct _Cell {
   struct _Cell *l, *r;
 } Cell;
 
+typedef struct {
+  CellType task;
+  Cell* val;
+} ContFrame;
+
+typedef struct {
+  // The mutable top of the continuation stack. Captured continuations use the
+  // immutable Cell chain in base, while ordinary pushes stay in this array.
+  Cell* base;
+  ContFrame* frames;
+  size_t count;
+  size_t capacity;
+} ContStack;
+
 #define YOUNG_SIZE (256*1024)
 #define HEAP_CHUNK_SIZE (256*1024-1)
 #define AGE_MAX 2
@@ -115,14 +129,47 @@ static inline Cell* new_cell0(CellType t) {
   return c;
 }
 
-static void mark(Cell* roots[], int nroot) {
-  int stack_size = INITIAL_MARK_STACK_SIZE;
+static inline void cont_push(ContStack* cont, CellType task, Cell* val) {
+  if (cont->count == cont->capacity) {
+    size_t capacity = cont->capacity ? cont->capacity * 2 : 64;
+    ContFrame* frames = realloc(cont->frames, capacity * sizeof(ContFrame));
+    if (!frames)
+      errexit("Out of memory\n");
+    cont->frames = frames;
+    cont->capacity = capacity;
+  }
+  cont->frames[cont->count].task = task;
+  cont->frames[cont->count].val = val;
+  cont->count++;
+}
+
+static inline void cont_pop(ContStack* cont, CellType* task, Cell** val) {
+  if (cont->count) {
+    cont->count--;
+    *task = cont->frames[cont->count].task;
+    *val = cont->frames[cont->count].val;
+  } else {
+    Cell* c = cont->base;
+    *task = c->t;
+    *val = c->r;
+    cont->base = c->l;
+  }
+}
+
+static void mark(Cell* roots[], int nroot, ContStack* cont) {
+  size_t stack_size = INITIAL_MARK_STACK_SIZE;
+  size_t initial_size = (size_t)nroot + cont->count + 1;
+  while (stack_size < initial_size)
+    stack_size *= 2;
   Cell** stack = malloc(sizeof(Cell*) * stack_size);
   if (!stack)
     errexit("Out of memory\n");
-  int i;
-  for (i = 0; i < nroot; i++)
+  size_t i = 0;
+  for (; i < (size_t)nroot; i++)
     stack[i] = roots[i];
+  stack[i++] = cont->base;
+  for (size_t j = 0; j < cont->count; j++)
+    stack[i++] = cont->frames[j].val;
 
   while (i) {
     Cell* c = stack[--i];
@@ -167,8 +214,8 @@ static void mark(Cell* roots[], int nroot) {
   free(stack);
 }
 
-static void major_gc(Cell* roots[], int nroot) {
-  mark(roots, nroot);
+static void major_gc(Cell* roots[], int nroot, ContStack* cont) {
+  mark(roots, nroot, cont);
 
   // Sweep
   int freed = 0, total = 0;
@@ -228,7 +275,7 @@ static Cell* copy_cell(Cell* c) {
   return r;
 }
 
-static void gc_run(Cell* roots[], int nroot) {
+static void gc_run(Cell* roots[], int nroot, ContStack* cont) {
   clock_t start = clock();
 
   Cell* scan = free_ptr = next_young_area;
@@ -237,14 +284,22 @@ static void gc_run(Cell* roots[], int nroot) {
 
   for (int i = 0; i < nroot; i++) {
     if (!free_list)
-      major_gc(roots, nroot);
+      major_gc(roots, nroot, cont);
     if (roots[i])
       roots[i] = copy_cell(roots[i]);
+  }
+  if (!free_list)
+    major_gc(roots, nroot, cont);
+  cont->base = copy_cell(cont->base);
+  for (size_t i = 0; i < cont->count; i++) {
+    if (!free_list)
+      major_gc(roots, nroot, cont);
+    cont->frames[i].val = copy_cell(cont->frames[i].val);
   }
 
   while (scan < free_ptr) {
     if (!free_list)
-      major_gc(roots, nroot);
+      major_gc(roots, nroot, cont);
     Cell* c = scan;
     if (c->t == COPIED)
       c = c->l;
@@ -271,7 +326,7 @@ static void gc_run(Cell* roots[], int nroot) {
     case APPLY_T:
       c->l = copy_cell(c->l);
       if (!free_list)
-        major_gc(roots, nroot);
+        major_gc(roots, nroot, cont);
       c->r = copy_cell(c->r);
       break;
     default:
@@ -287,6 +342,20 @@ static void gc_run(Cell* roots[], int nroot) {
 
   minor_gc_count++;
   total_gc_time += (clock() - start) / (double)CLOCKS_PER_SEC;
+}
+
+static Cell* capture_cont(ContStack* cont, Cell* roots[], int nroot) {
+  // Freeze only the frames added since the last capture or restoration.
+  for (size_t i = 0; i < cont->count; i++) {
+    while (free_ptr >= young_area_end)
+      gc_run(roots, nroot, cont);
+    cont->base = new_cell(cont->frames[i].task, cont->base,
+                          cont->frames[i].val);
+  }
+  cont->count = 0;
+  while (free_ptr >= young_area_end)
+    gc_run(roots, nroot, cont);
+  return new_cell1(CONT, cont->base);
 }
 
 // Parser --------------------------------------------------------------
@@ -398,12 +467,13 @@ static Cell* load_program(const char* fname) {
 
 // Evaluator -----------------------------------------------------------
 
-#define PUSHCONT(t, v) (next_cont = new_cell(task, next_cont, task_val), task = t, task_val = v)
-#define POPCONT (task = next_cont->t, task_val = next_cont->r, next_cont = next_cont->l)
+#define PUSHCONT(t, v) \
+  (cont_push(&cont, task, task_val), task = t, task_val = v)
+#define POPCONT cont_pop(&cont, &task, &task_val)
 
 void run(Cell* val) {
   int current_ch = EOF;
-  Cell* next_cont = NULL;
+  ContStack cont = {0};
   Cell* op;
 
   CellType task = EXIT;
@@ -454,6 +524,7 @@ void run(Cell* val) {
       POPCONT;
       goto apply;
     case EXIT:
+      free(cont.frames);
       return;
     default:
       errexit("[BUG] run: invalid task type %d\n", task);
@@ -462,11 +533,10 @@ void run(Cell* val) {
   eval:
     while (val->t == AP) {
       if (free_ptr >= young_area_end) {
-        Cell* roots[3] = {val, task_val, next_cont};
-        gc_run(roots, 3);
+        Cell* roots[2] = {val, task_val};
+        gc_run(roots, 2, &cont);
         val = roots[0];
         task_val = roots[1];
-        next_cont = roots[2];
       }
       PUSHCONT(EVAL_RIGHT, val->r);
       val = val->l;
@@ -474,12 +544,11 @@ void run(Cell* val) {
     continue;
   apply:
     if (free_ptr + 1 >= young_area_end) {
-      Cell* roots[4] = {val, task_val, next_cont, op};
-      gc_run(roots, 4);
+      Cell* roots[3] = {val, task_val, op};
+      gc_run(roots, 3, &cont);
       val = roots[0];
       task_val = roots[1];
-      next_cont = roots[2];
-      op = roots[3];
+      op = roots[2];
     }
     switch (op->t) {
     case I:
@@ -555,12 +624,19 @@ void run(Cell* val) {
       val = new_cell1(D1, val);
       break;
     case CONT:
-      next_cont = op->l;
+      cont.count = 0;
+      cont.base = op->l;
       POPCONT;
       break;
     case C:
       PUSHCONT(APPLY, val);
-      val = new_cell1(CONT, next_cont);
+      {
+        Cell* roots[3] = {val, task_val, op};
+        Cell* captured = capture_cont(&cont, roots, 3);
+        task_val = roots[1];
+        op = roots[2];
+        val = captured;
+      }
       break;
     case E:
       task = EXIT;
