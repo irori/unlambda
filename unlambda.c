@@ -574,6 +574,16 @@ void run(Cell* val) {
         Cell* e2 = new_cell(AP, op->r, val);
         val = new_cell1(D1, e2);
         break;
+      } else if (op->r->t == K) {
+        Cell* f = op->l;
+        val = new_cell1(K1, val);
+        op = f;
+        goto apply;
+      } else if (op->r->t == K1) {
+        Cell* f = op->l;
+        val = op->r->l;
+        op = f;
+        goto apply;
       } else {
         PUSHCONT(APPLY, op->l);
         op = op->r;
