@@ -1,7 +1,7 @@
 // Unlambda interpreter
 //
 // Copyright (c) 2018 Kunihiko Sakamoto <irorin@gmail.com>
-// This code is licensed under the MIT License (see LICENSE file for details).
+// SPDX-License-Identifier: MIT
 
 #include <ctype.h>
 #include <stdarg.h>
@@ -12,7 +12,7 @@
 #include <string.h>
 #include <time.h>
 
-#define VERSION "1.0.0"
+#define VERSION "1.0.1"
 
 // Verbosity levels
 static enum {
