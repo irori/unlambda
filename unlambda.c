@@ -15,7 +15,7 @@
 #define VERSION "1.0.0"
 
 // Verbosity levels
-enum {
+static enum {
   V_NONE,
   V_STATS,
   V_MAJOR_GC,
@@ -68,18 +68,18 @@ typedef struct {
 #define AGE_MAX 2
 #define INITIAL_MARK_STACK_SIZE (64*1024)
 
-Cell young1[YOUNG_SIZE];
-Cell young2[YOUNG_SIZE];
+static Cell young1[YOUNG_SIZE];
+static Cell young2[YOUNG_SIZE];
 
 typedef struct _HeapChunk {
   Cell cells[HEAP_CHUNK_SIZE];
   struct _HeapChunk *next;
 } HeapChunk;
 
-HeapChunk* old_area;
-Cell* free_list;
+static HeapChunk* old_area;
+static Cell* free_list;
 
-Cell *free_ptr, *young_area_end, *next_young_area;
+static Cell *free_ptr, *young_area_end, *next_young_area;
 
 static double total_gc_time = 0.0;
 static int major_gc_count = 0;
